@@ -1,4 +1,4 @@
-/* $Id: tubefit.c,v 1.3 2001/09/12 03:37:59 frolov Exp $ */
+/* $Id: tubefit.c,v 1.4 2001/09/18 03:25:20 frolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
@@ -421,11 +421,18 @@ void anneal(double **S, int n, double (*func)(double []), double T0, int maxstep
 
 /******************* Vacuum tube models *******************************/
 
+/* A way to refer to previous model's parameters */
+#define PRIOR_MAGIC 0x00505259
+#define PRMREF(m,k) ((((PRIOR_MAGIC<<4) + (m))<<4) + k)
+#define PRIOR(k) PRMREF(1,k)
+
+
 /* uramp() like in Spice 3f4 */
 static double uramp(double x)
 {
 	return (x > 0.0) ? x : 0.0;
 }
+
 
 /* Vacuum diode; Child-Langmuir law */
 static double diode(double p[], double V[])
@@ -440,6 +447,7 @@ static double diode(double p[], double V[])
 }
 
 /* Vacuum diode; Child-Langmuir law with contact potential */
+static double init_diode_cp[] = {PRIOR(0), 0.0};
 static double diode_cp(double p[], double V[])
 {
 	double I;
@@ -452,7 +460,7 @@ static double diode_cp(double p[], double V[])
 }
 
 /* Vacuum diode; Perugini model */
-static double init_perugini[] = {0.0, 0.0, 0.0, 1.5};
+static double init_perugini[] = {PRIOR(0), 0.0, PRIOR(1), 1.5};
 static double diode_perugini(double p[], double V[])
 {
 	double I;
@@ -478,6 +486,7 @@ static double triode(double p[], double V[])
 }
 
 /* Vacuum triode; Child-Langmuir law with contact potential */
+static double init_triode_cp[] = {PRIOR(0), PRIOR(1), 0.0};
 static double triode_cp(double p[], double V[])
 {
 	double I;
@@ -490,6 +499,7 @@ static double triode_cp(double p[], double V[])
 }
 
 /* Vacuum triode; Rydel model (4 parameters) */
+static double init_rydel4[] = {PRIOR(0), 0.0, PRIOR(1), PRIOR(2)};
 static double triode_rydel4(double p[], double V[])
 {
 	double I;
@@ -502,6 +512,7 @@ static double triode_rydel4(double p[], double V[])
 }
 
 /* Vacuum triode; Rydel model (5 parameters) */
+static double init_rydel5[] = {PRIOR(0), PRIOR(1), PRIOR(2), PRIOR(3), 0.0};
 static double triode_rydel5(double p[], double V[])
 {
 	double I;
@@ -525,29 +536,29 @@ static double triode_rydel_grid(double p[], double V[])
 	return I;
 }
 
-/* Vacuum triode; Scott model */
-static double init_scott[] = {0.0, 1.0, 30.0, 1.5};
-static double triode_scott(double p[], double V[])
+/* Vacuum triode; Koren model (4 parameters) */
+static double init_koren4[] = {PRMREF(5,0), 5.0, PRMREF(5,1), 1.5};
+static double triode_koren4(double p[], double V[])
 {
 	double I, U;
 	double Vp = V[0], Vg = V[1];
 	double K = p[0], Kp = p[1], mu = p[2], gamma = p[3];
 	
-	U = log(1.0 + exp(Kp * (mu*Vg + Vp)))/Kp;
+	U = Vp * log(1.0 + exp(Kp + Kp*mu*Vg/Vp))/Kp;
 	I = K * pow(uramp(U), gamma);
 	
 	return I;
 }
 
-/* Vacuum triode; Koren model */
-static double init_koren[] = {0.0, 1.0, 0.0, 30.0, 1.5};
-static double triode_koren(double p[], double V[])
+/* Vacuum triode; Koren model (5 parameters) */
+static double init_koren5[] = {PRIOR(0), PRIOR(1), 0.0, PRIOR(2), PRIOR(3)};
+static double triode_koren5(double p[], double V[])
 {
 	double I, U;
 	double Vp = V[0], Vg = V[1];
 	double K = p[0], Kp = p[1], Kv = p[2], mu = p[3], gamma = p[4];
 	
-	U = Vp * log(1.0 + exp(Kp + Kp*mu*Vg/sqrt(Kv + Vp*Vp)))/Kp;
+	U = Vp * log(1.0 + exp(Kp + Kp*mu*Vg/sqrt(1000.0*Kv + Vp*Vp)))/Kp;
 	I = K * pow(uramp(U), gamma);
 	
 	return I;
@@ -570,17 +581,17 @@ typedef struct {
 model mindex[] = {
 	/* Vacuum diode models */
 	{2, "Child-Langmuir law", "diode", 1, diode},
-	{2, "Child-Langmuir law with contact potential", "diode_cp", 2, diode_cp},
+	{2, "Child-Langmuir law with contact potential", "diode_cp", 2, diode_cp, init_diode_cp},
 	{2, "Perugini model", "perugini", 4, diode_perugini, init_perugini},
 	
 	/* Vacuum triode models */
 	{3, "Child-Langmuir law", "triode", 2, triode},
-	{3, "Child-Langmuir law with contact potential", "triode_cp", 3, triode_cp},
-	{3, "Rydel model (4 parameters)", "rydel4", 4, triode_rydel4},
-	{3, "Rydel model (5 parameters)", "rydel5", 5, triode_rydel5},
+	{3, "Child-Langmuir law with contact potential", "triode_cp", 3, triode_cp, init_triode_cp},
+	{3, "Rydel model (4 parameters)", "rydel4", 4, triode_rydel4, init_rydel4},
+	{3, "Rydel model (5 parameters)", "rydel5", 5, triode_rydel5, init_rydel5},
 	{3, "Rydel model for grid current", "rydelg", 3, triode_rydel_grid},
-	{3, "Scott model", "scott", 4, triode_scott, init_scott},
-	{3, "Koren model", "koren", 5, triode_koren, init_koren},
+	{3, "Koren model (4 parameters)", "koren4", 4, triode_koren4, init_koren4},
+	{3, "Koren model (5 parameters)", "koren5", 5, triode_koren5, init_koren5},
 };
 
 
@@ -610,18 +621,25 @@ static double chi2(double p[])
 /* Fit parametric curve model to the data using simulated annealing */
 double *fit_curve(double **data, int n, model *m)
 {
-	int i, D = m->params;
+	int i, j, k, D = m->params;
 	double *p = vector(D+1), **S;
 	
 	_pts_ = n;
 	_data_ = data;
 	_model_ = m;
 	
-	for(i = 0; i < D; i++) p[i] = m->p ? m->p[i] : 0.0;
+	for (i = 0; i < D; i++) {
+		if (!m->p) { p[i] = 0.0; continue; }
+		if (((int)(m->p[i]) >> 8) != PRIOR_MAGIC) { p[i] = m->p[i]; continue; }
+		
+		j = ((int)(m->p[i]) & 0xF0) >> 4;
+		k = (int)(m->p[i]) & 0x0F;
+		p[i] = (m-j)->p[k];
+	}
 	
-	S = new_amoeba(p, D, chi2, 1.0); anneal(S, D, chi2, 1.0, 1000, 1.0e-6);
-	restart_amoeba(S, D, chi2, 0.3); anneal(S, D, chi2, 0.1, 1000, 1.0e-6);
-	restart_amoeba(S, D, chi2, 0.1); anneal(S, D, chi2, 0.0, 9999, 1.0e-6);
+	S = new_amoeba(p, D, chi2, 1.0); anneal(S, D, chi2, 100.0, 8000, 1.0e-6);
+	restart_amoeba(S, D, chi2, 0.3); anneal(S, D, chi2,  10.0, 4000, 1.0e-6);
+	restart_amoeba(S, D, chi2, 0.1); anneal(S, D, chi2,   0.0, 2000, 1.0e-6);
 	
 	for (i = 0; i <= D; i++) p[i] = S[D+1][i]; m->p = p;
 	
@@ -834,9 +852,7 @@ void write_data(FILE *fp, double **m, int n)
 
 
 
-/**********************************************************************/
-
-double *fft256(double F[]);
+/****************** Bias and loadlines ********************************/
 
 /* Find a root of f(x)=0 bracketed in interval [x1,x2] */
 double zbrent(double (*f)(double), double x1, double x2, double eps)
@@ -900,37 +916,66 @@ double zbrent(double (*f)(double), double x1, double x2, double eps)
 }
 
 
-/* Working point is passed as global variable */
-static double _VI_[6]; /* Vp Vg Vs I (Vb 1/R) */
+/* Working point and other stuff is passed in global variables */
+static double _Vp_, _Vg_, _I_, _Vb_, _G_, _Vo_;
 
 
 /* Find grid bias for a given working point */
 static double _bias_(double Vg)
 {
-	_VI_[1] = Vg; return (*(_model_->curve))(_model_->p, _VI_) - _VI_[3];
+	double V[] = {_Vp_, Vg, _Vp_}, I = (*(_model_->curve))(_model_->p, V);
+	
+	return I - _I_;
 }
 
 double bias(model *m, double Vp, double Ip)
 {
-	_model_ = m; _VI_[0] = _VI_[2] = Vp; _VI_[3] = Ip;
+	_model_ = m; _Vp_ = Vp; _I_ = Ip;
 	
-	return zbrent(_bias_, -300, 100, 1.0e-6);
+	return zbrent(_bias_, -1000, 500, 1.0e-12);
 }
 
-/* Find tube output on a given lloadline */
+
+/* Find tube output on a given loadline */
 static double _loadline_(double Vp)
 {
-	_VI_[0] = _VI_[2] = Vp; return (*(_model_->curve))(_model_->p, _VI_) - _VI_[3] + _VI_[5]*(Vp-_VI_[4]);
+	double V[] = {Vp, _Vg_, Vp}, I = (*(_model_->curve))(_model_->p, V);
+	
+	return (I-_I_) + _G_*(Vp-_Vb_);
 }
 
 double output(model *m, double Vg, double Vb, double I0, double R)
 {
-	_model_ = m; _VI_[1] = Vg; _VI_[3] = I0;
-	_VI_[4] = Vb; _VI_[5] = (R != 0.0) ? 1.0/R : 0.0;
+	_model_ = m; _Vg_ = Vg; _I_ = I0;
+	_Vb_ = Vb; _G_ = (R != 0.0) ? 1.0/R : 0.0;
 	
-	return zbrent(_loadline_, 0, 1000, 1.0e-6);
+	return zbrent(_loadline_, 0, 3000, 1.0e-12);
 }
 
+
+/* Find grid drive for a given output voltage swing */
+static double _swing_(double Vi)
+{
+	double Vg = _Vg_, Vmin, Vmax;
+	
+	_Vg_ = Vg+Vi; Vmin = zbrent(_loadline_, 0, 3000, 1.0e-12);
+	_Vg_ = Vg-Vi; Vmax = zbrent(_loadline_, 0, 3000, 1.0e-12);
+	
+	_Vg_ = Vg; return fabs(Vmax-Vmin) - 2.0*_Vo_;
+}
+
+double drive(model *m, double Vo, double Vb, double I0, double R)
+{
+	_model_ = m; _Vg_ = bias(m, Vb, I0); _Vo_ = Vo;
+	_I_ = I0; _Vb_ = Vb; _G_ = (R != 0.0) ? 1.0/R : 0.0;
+	
+	return zbrent(_swing_, 0, 1000, 1.0e-12);
+}
+
+
+/****************** Distortion analysis *******************************/
+
+double *fft256(double F[]);
 
 /* Return the square amplitude of j-th harmonic */
 static double harmonic(double *H, int j)
@@ -972,13 +1017,47 @@ void distortion(model *m, double Vin, double Vb, double I0, double R)
 	free_vector(H);
 }
 
-/* Tune loadline */
-void loadtune(model *m, double Vin, double Vb, double I0)
+
+/* Tune load for a fixed tube bias */
+void loadtune(model *m, double V, double I, double Vo)
 {
-	double R;
+	double R, Vbias, Vdrive;
 	
-	for (R = 0.01; R < 30.0; R *= pow(10.0, 0.1)) {
-		printf("%g    ", R); distortion(m, Vin, Vb, I0, R);
+	for (R = 100; R < 150.0e3; R *= pow(10.0, 0.02)) {
+		Vbias = bias(m, V, I);
+		Vdrive = drive(m, Vo, V, I, R/1000.0);
+		printf("%g %g %g %g %g    ", R, V, I, Vbias, Vdrive);
+		distortion(m, Vdrive, V, I, R/1000.0);
+	}
+}
+
+/* Tune working point for a fixed plate power and small signal output */
+void signaltune(model *m, double P, double Vo)
+{
+	double R, V, I, Vbias, Vdrive;
+	
+	for (R = 100; R < 150.0e3; R *= pow(10.0, 0.02)) {
+		V = sqrt(P*R);
+		I = sqrt(P/R)*1000.0;
+		Vbias = bias(m, V, I);
+		Vdrive = drive(m, Vo, V, I, 0.0);
+		printf("%g %g %g %g %g    ", R, V, I, Vbias, Vdrive);
+		distortion(m, Vdrive, V, I, 0.0);
+	}
+}
+
+/* Tune working point for a fixed plate and output power */
+void powertune(model *m, double P, double kpd)
+{
+	double R, V, I, Vbias, Vdrive;
+	
+	for (R = 10; R < 15.0e3; R *= pow(10.0, 0.02)) {
+		V = sqrt(P*R);
+		I = sqrt(P/R)*1000.0;
+		Vbias = bias(m, V, I);
+		Vdrive = drive(m, sqrt(kpd)*V, V, I, R/1000.0);
+		printf("%g %g %g %g %g    ", R, V, I, Vbias, Vdrive);
+		distortion(m, Vdrive, V, I, R/1000.0);
 	}
 }
 
@@ -1030,8 +1109,12 @@ int main(int argc, char *argv[])
 	/* Do model fit */
 	try_all_models(d, n);
 	
-	//printf("%g\n", bias(mindex+9, 150.0, 100.0));
+	//printf("%g\n", bias(mindex+9, 125.0, 100.0));
 	//printf("%g\n", output(mindex+9, -0.0, 150.0, 30.0, 1.714));
-	loadtune(mindex+9, 50.0, 125.0, 100.0);
+	
+	//powertune(mindex+9, 13.0, 0.5);
+	//signaltune(mindex+9, 13.0, 1.0);
+	//loadtune(mindex+9, 125.0, 100.0, 1.0);
+	
 	return 0;
 }
