@@ -17,7 +17,7 @@ set val(Ip) 0; set incr(Ip)  10.0; set units(Ip) "mA"
 set val(Ig) 0; set incr(Ig)   1.0; set units(Ig) "mA"
 
 set type 3; set format {Vp Ip Vg}
-set param Vg; set axis 0; set markstyle "data"
+set param Vg; set axis 0; set markstyle "data(+)"
 
 # Step parameter value
 proc step {p} {
@@ -36,10 +36,8 @@ proc ctag {} {
 }
 
 # Draw current curve mark
-proc draw {c x y} {
-	global markstyle
-	
-	switch $markstyle {
+proc draw {c x y s} {
+	switch $s {
 		"tick(v)" {
 			$c create polygon\
 				$x $y\
@@ -127,7 +125,7 @@ $m add command -label "Plate Characteristics: Ip axis" -command {
 	set curve "Ip axis"; set markstyle "tick(<)"; tracing {Vp Ip Vg} Ip 1
 }
 $m add command -label "Plate Characteristics Curve" -command {
-	set curve "Plate curve"; set markstyle "data"; tracing {Vp Ip Vg} Vg 0
+	set curve "Plate curve"; set markstyle "data(+)"; tracing {Vp Ip Vg} Vg 0
 }
 $m add separator
 $m add command -label "Grid Characteristics: Vp axis" -command {
@@ -137,7 +135,7 @@ $m add command -label "Grid Characteristics: Ig axis" -command {
 	set curve "Ig axis"; set markstyle "tick(<)"; tracing {Vp Ig Vg} Ig 1
 }
 $m add command -label "Grid Characteristics Curve" -command {
-	set curve "Grid curve"; set markstyle "data"; tracing {Vp Ig Vg} Vg 0
+	set curve "Grid curve"; set markstyle "data(+)"; tracing {Vp Ig Vg} Vg 0
 }
 $m add separator
 $m add command -label "Transfer Characteristics: Vg axis" -command {
@@ -147,7 +145,7 @@ $m add command -label "Transfer Characteristics: Ip axis" -command {
 	set curve "Ip axis"; set markstyle "tick(<)"; tracing {Vg Ip Vp} Ip 1
 }
 $m add command -label "Transfer Characteristics Curve" -command {
-	set curve "Transfer curve"; set markstyle "data"; tracing {Vg Ip Vp} Vp 0
+	set curve "Transfer curve"; set markstyle "data(+)"; tracing {Vg Ip Vp} Vp 0
 }
 $m invoke 2
 
@@ -173,24 +171,24 @@ canvas $c -width [image width curves] -height [image height curves]
 $c create image 0 0 -anchor nw -image curves
 pack $c -side top -padx .5m -pady .5m
 
-bind $c <1> "mark $c %x %y"
-bind $c <B1-Motion> "move $c %x %y"
+bind $c <1>		{mark $c [ctag] %x %y $markstyle}
+bind $c <B1-Motion>	{move $c %x %y}
 
-$c bind X <2> "select $c %x %y"
-$c bind X <B2-Motion> "move $c %x %y"
+$c bind X <2>		{select $c %x %y}
+$c bind X <B2-Motion>	{move $c %x %y}
 
-bind . <Left> "nudge $c -1 0"
-bind . <Right> "nudge $c 1 0"
-bind . <Up> "nudge $c 0 -1"
-bind . <Down> "nudge $c 0 1"
-bind . <KP_Left> "nudge $c -1 0"
-bind . <KP_Right> "nudge $c 1 0"
-bind . <KP_Up> "nudge $c 0 -1"
-bind . <KP_Down> "nudge $c 0 1"
-bind . <KP_Home> "nudge $c -1 -1"
-bind . <KP_Page_Up> "nudge $c 1 -1"
-bind . <KP_End> "nudge $c -1 1"
-bind . <KP_Page_Down> "nudge $c 1 1"
+bind . <Left>		{nudge $c -1 0}
+bind . <Right>		{nudge $c 1 0}
+bind . <Up>		{nudge $c 0 -1}
+bind . <Down>		{nudge $c 0 1}
+bind . <KP_Left>	{nudge $c -1 0}
+bind . <KP_Right>	{nudge $c 1 0}
+bind . <KP_Up>		{nudge $c 0 -1}
+bind . <KP_Down>	{nudge $c 0 1}
+bind . <KP_Home>	{nudge $c -1 -1}
+bind . <KP_Page_Up>	{nudge $c 1 -1}
+bind . <KP_End>		{nudge $c -1 1}
+bind . <KP_Page_Down>	{nudge $c 1 1}
 
 # Activate tag
 proc activate {c t} {
@@ -202,11 +200,12 @@ proc activate {c t} {
 }
 
 # New cross-hairs mark
-proc mark {c x y} {
+proc mark {c m x y s} {
 	global X Y; set X $x; set Y $y
 	
-	set t [draw $c $x $y]
-	$c addtag [ctag] withtag $t
+	set t [draw $c $x $y $s]
+	$c addtag $m withtag $t
+	$c addtag $s withtag $t
 	$c addtag X withtag $t
 	activate $c $t
 }
@@ -233,29 +232,44 @@ proc nudge {c dx dy} {
 }
 
 
-
-
-bind $c <3> "dump stdout $c"
-
 # Send tagged curve data to a channel
 proc dump {fp c} {
 	foreach t [$c find withtag X] {
-		puts $fp [concat [lindex [$c gettags $t] 0] [lrange [$c coords $t] 0 1]]
+		puts $fp [concat [lindex [$c gettags $t] 0] [lrange [$c coords $t] 0 1] [lindex [$c gettags $t] 1] ]
+	}
+}
+
+# Read tagged curve data from a channel
+proc slurp {fp c} {
+	foreach t [split [read -nonewline $fp] "\n"] {
+		if {[string match "#*" $t]} { continue }
+		
+		set l [split $t]; mark $c [lindex $l 0] [lindex $l 1] [lindex $l 2] [lindex $l 3]
 	}
 }
 
 # Save tagged curve data to a file
-proc save_raw {c} {
+proc save_markers {c} {
 	global device
 	
 	set f [tk_getSaveFile -initialfile "$device.crv"]
-	dump [open $f a] $c
+	set fp [open $f w]; dump $fp $c; close $fp
+}
+
+# Load tagged curve data from a file
+proc load_markers {c} {
+	global device
+	
+	set f [tk_getOpenFile -initialfile "$device.crv"]
+	set fp [open $f r]; slurp $fp $c; close $fp
 }
 
 
 set b .buttons; frame $b
-button .buttons.dismiss -text Dismiss -command {destroy .}
-button .buttons.save -text "Save Data" -command {save_raw $c}
-pack .buttons.save .buttons.dismiss -side left -expand 1
+button $b.capture -text "Capture Curve" -command {}
+button $b.load -text "Load Markers" -command {load_markers $c}
+button $b.save -text "Save Markers" -command {save_markers $c}
+button $b.dismiss -text Dismiss -command {destroy .}
+pack $b.capture $b.load $b.save $b.dismiss -side left -expand 1
 pack $b -side bottom -fill x -pady 2m
 
