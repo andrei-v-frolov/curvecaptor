@@ -1,5 +1,6 @@
 #!/usr/bin/wish
 
+# Initialization
 set file [lindex $argv 0]
 catch {image delete curves}
 image create photo curves -file $file
@@ -7,6 +8,52 @@ image create photo curves -file $file
 wm title . "Curve Captor -- $file"
 wm iconname . "lprt"
 
+
+# Global parameters
+set Vptick 100
+set Iptick 10
+set Vg 0
+
+
+# Toolbar
+set t .tools
+frame $t -borderwidth 3 -relief raised
+
+label $t.label -text "Tracing: "; label $t.plabel
+entry $t.param -width 5 -justify right
+label $t.units -textvariable units
+
+set m $t.curve.menu
+menubutton $t.curve -menu $m -textvariable curve -direction below -indicatoron yes -width 12 -borderwidth 2 -relief sunk
+menu $m -tearoff 0
+$m add command -label "Vp axis" -command {
+	set curve "Vp axis"; set units "\[V\]"
+	$t.param configure -textvariable Vptick
+	$t.plabel configure -text ", tickmarks every"
+	
+	set markstyle 0
+}
+$m add command -label "Ip axis" -command {
+	set curve "Ip axis"; set units "\[mA\]"
+	$t.param configure -textvariable Iptick
+	$t.plabel configure -text ", tickmarks every"
+	
+	set markstyle 1
+}
+$m add command -label "Plate curve" -command {
+	set curve "Plate curve"; set units "\[V\]"
+	$t.param configure -textvariable Vg
+	$t.plabel configure -text "@ grid voltage"
+	
+	set markstyle 2
+}
+$m invoke 0
+
+pack $t.label $t.curve $t.plabel $t.param $t.units -side left -expand no -pady 4
+pack $t -side top -fill x
+
+
+# Curve tracer canvas
 set c .canvas
 canvas $c -width [image width curves] -height [image height curves]
 $c create image 0 0 -anchor nw -image curves
@@ -15,7 +62,7 @@ pack $c -side top -padx .5m -pady .5m
 bind $c <1> "mark $c %x %y"
 bind $c <B1-Motion> "move $c %x %y"
 
-$c bind X <2> "grab $c %x %y"
+$c bind X <2> "select $c %x %y"
 $c bind X <B2-Motion> "move $c %x %y"
 
 bind . <Left> "nudge $c -1 0"
@@ -31,6 +78,54 @@ bind . <KP_Page_Up> "nudge $c 1 -1"
 bind . <KP_End> "nudge $c -1 1"
 bind . <KP_Page_Down> "nudge $c 1 1"
 
+# Return current curve tag
+proc ctag {} {
+	global markstyle Vptick Iptick Vg
+	
+	switch $markstyle {
+		0 { return "Vp@$Vptick" }
+		1 { return "Ip@$Iptick" }
+		2 { return "Vg=$Vg" }
+		default { error "Undefined curve style" }
+	}
+}
+
+# Draw cross-hairs
+proc draw {c x y} {
+	global markstyle
+	
+	switch $markstyle {
+		0 {
+			$c create polygon\
+				$x $y\
+				[expr $x-4] [expr $y-13]\
+				[expr $x+5] [expr $y-13]\
+				$x $y\
+				[expr $x-6] $y\
+				[expr $x+7] $y\
+			-width 1 -outline red
+		}
+		1 {
+			$c create polygon\
+				$x $y\
+				[expr $x+13] [expr $y-4]\
+				[expr $x+13] [expr $y+5]\
+				$x $y\
+				$x [expr $y-6]\
+				$x [expr $y+7]\
+			-width 1 -outline red
+		}
+		default {
+			$c create line\
+				$x $y $x [expr $y+7]\
+				$x $y [expr $x+7] $y\
+				$x $y $x [expr $y-6]\
+				$x $y [expr $x-6] $y\
+			-width 1
+		}
+	}
+}
+
 # Activate tag
 proc activate {c t} {
 	$c itemconf active -fill red; $c dtag active
@@ -38,23 +133,21 @@ proc activate {c t} {
 	$c raise active
 }
 
-# Draw cross-hairs mark
+# New cross-hairs mark
 proc mark {c x y} {
-	activate $c [
-		$c create line\
-			$x $y $x [expr $y+7]\
-			$x $y [expr $x+7] $y\
-			$x $y $x [expr $y-6]\
-			$x $y [expr $x-6] $y\
-		-width 1 -fill red]
-	$c addtag X withtag active
 	global X Y; set X $x; set Y $y
+	
+	set t [draw $c $x $y]
+	$c addtag [ctag] withtag $t
+	$c addtag X withtag $t
+	activate $c $t
 }
 
-# Grab mark for moving
-proc grab {c x y} {
-	activate $c current
+# Select mark for moving
+proc select {c x y} {
 	global X Y; set X $x; set Y $y
+	
+	activate $c current
 }
 
 # Move active mark
@@ -74,11 +167,11 @@ proc nudge {c dx dy} {
 
 
 
-bind $c <3> "dump $c X"
+bind $c <3> "dump $c"
 
-proc dump {c tag} {
-	foreach t [$c find withtag $tag] {
-		puts [concat $tag [lrange [$c coords $t] 0 1]]
+proc dump {c} {
+	foreach t [$c find withtag X] {
+		puts [concat [lindex [$c gettags $t] 0] [lrange [$c coords $t] 0 1]]
 	}
 }
 
