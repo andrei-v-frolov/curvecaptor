@@ -1,4 +1,4 @@
-/* $Id: tubefit.c,v 1.5 2001/09/19 03:24:38 frolov Exp $ */
+/* $Id: tubefit.c,v 1.6 2001/09/20 03:27:50 frolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
@@ -694,8 +694,8 @@ double *fit_curve(double **data, int n, model *m)
 	return p;
 }
 
-/* Try all appropriate models */
-model *try_all_models(double **data, int n)
+/* Try all appropriate models and return the best one */
+model *best_model(double **data, int n)
 {
 	int i, j, best = 0;
 	double *p, min = HUGE;
@@ -840,6 +840,7 @@ double **read_tagged_data(FILE *fp, const char *format, int *pts)
 	return m;
 }
 
+
 /* Read curve data in plain format */
 double **read_data(FILE *fp, int *pts)
 {
@@ -898,6 +899,109 @@ void write_data(FILE *fp, double **m, int n)
 		case 5:
 			fprintf(fp, "%12.10g %12.10g %12.10g %12.10g\n", m[2][i], m[1][i], m[0][i], m[3][i]); break;
 	}
+}
+
+
+/* */
+void plot_curves(FILE *fp, double **data, int n, model *m, double Vmax, double Imax, double Vgm, double Vgs)
+{
+	int i; double Vp, Vg, Ip;
+	
+	#define X(V) (40.0 + 560.0*(V)/Vmax)
+	#define Y(I) (460.0 - 440.0*(I)/Imax)
+	
+	
+	/* Auto ranges */
+	if ((Vmax == 0.0) && data) {
+		for (i = 0; i < n; i++) if (data[0][i] > Vmax) Vmax = data[0][i];
+		i = 5.0 * pow(10.0, floor(log10(Vmax))-1); Vmax = i * ceil(Vmax/i);
+	}
+	
+	if ((Imax == 0.0) && data) {
+		for (i = 0; i < n; i++) if (data[3][i] > Imax) Imax = data[3][i];
+		i = 5.0 * pow(10.0, floor(log10(Imax))-1); Imax = i * ceil(Imax/i);
+	}
+	
+	if ((Vgm == 0.0) && data) {
+		for (i = 0; i < n; i++) {
+			if (fabs(data[1][i]) > fabs(Vgm)) Vgm = data[1][i];
+			if ((Vgs == 0.0) && (data[1][i] != 0.0)) Vgs = data[1][i];
+		}
+	}
+	
+	
+	/* Axis grid */
+	fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline black -fill white -width 1\n",
+			X(0),Y(0), X(Vmax),Y(0), X(Vmax),Y(Imax), X(0),Y(Imax));
+	
+	for (i = 0; i <= 10; i++) {
+		fprintf(fp, "line %g %g %g %g -fill black -width 1 -dash .\n",
+				X(Vmax*i/10), Y(0), X(Vmax*i/10), Y(Imax));
+		fprintf(fp, "text %g %g -anchor n -text %g -fill black\n",
+				X(Vmax*i/10), Y(0)+5, Vmax*i/10);
+		fprintf(fp, "line %g %g %g %g -fill black -width 1 -dash .\n",
+				X(0), Y(Imax*i/10), X(Vmax), Y(Imax*i/10));
+		fprintf(fp, "text %g %g -anchor e -text %g -fill black\n",
+				X(0)-5, Y(Imax*i/10), Imax*i/10);
+	}
+	
+	/* Data points */
+	if (data) for (i = 0; i < n; i++) {
+		Vp = data[0][i]; Vg = data[1][i]; Ip = data[3][i];
+		
+		if (fabs(Vg/Vgs - rint(Vg/Vgs)) < 1.0e-4)
+			fprintf(fp, "oval %g %g %g %g -outline black -width 1\n",
+					X(Vp)-1, Y(Ip)+1, X(Vp)+2, Y(Ip)-2);
+	}
+	
+	/* Plate curves */
+	if (m) for (Vg = 0.0; fabs(Vg) <= fabs(Vgm); Vg += Vgs) {
+		fprintf(fp, "line ");
+		
+		for (Vp = 0.0, Ip = 0.0; (Vp <= Vmax) && (Ip <= Imax); Vp += Vmax/200) {
+			double V[] = {Vp, Vg, Vp};
+			
+			Ip = (*(m->curve))(m->p, V);
+			fprintf(fp, "%g %g ", X(Vp), Y(Ip));
+		}
+		
+		fprintf(fp, "-smooth 1 -fill black -width 2\n");
+		fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline white -fill white -width 1\n",
+				X(0),Y(Imax)-1, X(Vmax),Y(Imax)-1, X(Vmax),0.0, X(0),0.0);
+		fprintf(fp, "text %g %g -anchor nw -text %g -fill black\n",
+				X(Vp)+2, Y((Ip > Imax) ? Imax : Ip)+2, Vg);
+	}
+	
+	/* Power */
+	if (Pa > 0.0) {
+		fprintf(fp, "line ");
+		
+		for (Vp = 1000.0*Pa/Imax; Vp <= Vmax; Vp += Vmax/200)
+			fprintf(fp, "%g %g ", X(Vp), Y(1000.0*Pa/Vp));
+		
+		fprintf(fp, "-smooth 1 -fill red -width 3\n");
+		fprintf(fp, "text %g %g -anchor s -text \"%g W\" -fill red\n",
+				X(0.95*Vmax), Y(1053.0*Pa/Vmax)-5, Pa);
+	}
+	
+	/* Loadline */
+	if (V0 > 0.0) {
+		double G = (RL != 0.0) ? 1000.0/RL : 0.0;
+		double V1 = 0.0, I1 = I0+G*V0, V2 = Vmax, I2 = I0+G*(V0-Vmax);
+		
+		if ((I1 > Imax) && (G != 0.0)) { I1 = Imax; V1 = V0 - (Imax-I0)/G; }
+		if ((I2 < 0.0) && (G != 0.0)) { I2 = 0.0; V2 = V0 + I0/G; }
+		
+		fprintf(fp, "line ");
+		fprintf(fp, "%g %g %g %g ", X(V1), Y(I1), X(V2), Y(I2));
+		fprintf(fp, "-fill blue -width 3\n");
+		
+		fprintf(fp, "text %g %g -anchor sw -text \"%g R\" -fill blue\n",
+				X(V2)+2, Y(I2)-5, RL);
+	}
+	
+	#undef X
+	#undef Y
 }
 
 
@@ -1192,7 +1296,11 @@ int main(int argc, char *argv[])
 	if (output_only) { write_data(stdout, d, n); exit(0); }
 	
 	/* Do model fit */
-	try_all_models(d, n);
+	//best_model(d, n);
+	
+	//fit_curve(d, n, mindex+3);
+	//plot_curves(stdout, d, n, mindex+3, 0, 0, 0, 0);
+	plot_curves(stdout, d, n, best_model(d, n), 0, 0, 0, 0);
 	
 	//printf("%g\n", bias(mindex+9, 125.0, 100.0));
 	//printf("%g\n", output(mindex+9, -0.0, 150.0, 30.0, 1.714));
