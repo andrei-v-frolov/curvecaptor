@@ -1,4 +1,5 @@
 #!/usr/bin/wish
+# $Id: curvecaptor,v 1.11 2002/03/03 00:51:39 frolov Exp $
 
 # Curve Captor - vacuum tube curve capture and model builder tool
 # 
@@ -453,8 +454,9 @@ proc model {t} {
 	
 	menu $cm -tearoff 0
 	$cm add command -label "Single Ended" -command { set circuit "SE" }
+	$cm add command -label "Cathode Follower" -command { set circuit "CF" }
 	$cm add command -label "Push-Pull" -command { set circuit "PP" }
-	$cm add command -label "Cathode Follower" -command { set circuit "CF" } -state disabled
+	$cm add command -label "PP Cathode Follower" -command { set circuit "PPCF" } -state disabled
 	$cm invoke 0
 	
 	pack $f.macro $f.param $f.circuit -side left -expand 1 -pady 4
