@@ -371,7 +371,7 @@ proc print {c} {
 # Render curves plot on a canvas
 proc render {c t} {
 	global Pa I0 V0 RL Vin Vout wave signal
-	global backend device type macro mparams
+	global backend device type macro mparams circuit
 	
 	# Backend options
 	set b {$backend -$type -M "$macro\($mparams\)"}
@@ -383,7 +383,7 @@ proc render {c t} {
 	if {($signal == "input") && ($Vin > 0)} { append b { -I$Vin} }
 	if {($signal == "output") && ($Vout > 0)} { append b { -O$Vout} }
 	if {$wave} { append b { -w} }
-	append b { -p << [$t get 0.0 end] 2>@ stderr}
+	append b { -p $circuit << [$t get 0.0 end] 2>@ stderr}
 	
 	# Run backend
 	set p [eval "exec $b"]; $c delete all; foreach i [split $p "\n"] { eval "$c create $i" }
@@ -441,16 +441,23 @@ proc model {t} {
 	
 	
 	# Model selector
-	set f $w.mframe; set m $f.macro.menu
+	set f $w.mframe; set m $f.macro.menu; set cm $f.circuit.menu
 	frame $f -borderwidth 3 -relief raised
 	menubutton $f.macro -menu $m -textvariable macro -width 7 -direction above -indicatoron yes -borderwidth 2 -relief sunk
-	entry $f.param -width 84 -justify left -textvariable mparams
+	entry $f.param -width 78 -justify left -textvariable mparams
+	menubutton $f.circuit -menu $cm -textvariable circuit -width 2 -direction above -indicatoron yes -borderwidth 2 -relief sunk
 	
 	menu $m -tearoff 0
 	set p [exec $backend -v -$type -m << [$t get 0.0 end] 2>@ stderr]
 	foreach i [split $p "\n"] { eval "$m $i" }
 	
-	pack $f.macro $f.param -side left -expand 1 -pady 4
+	menu $cm -tearoff 0
+	$cm add command -label "Single Ended" -command { set circuit "SE" }
+	$cm add command -label "Push-Pull" -command { set circuit "PP" }
+	$cm add command -label "Cathode Follower" -command { set circuit "CF" } -state disabled
+	$cm invoke 0
+	
+	pack $f.macro $f.param $f.circuit -side left -expand 1 -pady 4
 	pack $f -side top -fill x
 	
 	
