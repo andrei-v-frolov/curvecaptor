@@ -1,4 +1,4 @@
-/* $Id: tubefit.c,v 1.4 2001/09/18 03:25:20 frolov Exp $ */
+/* $Id: tubefit.c,v 1.5 2001/09/19 03:24:38 frolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
@@ -35,13 +35,18 @@ char *usage_msg[] = {
 	"  -h		print this message",
 	"  -v		verbosity (cumulative)",
 	"",
-	" Operation mode:",
-	"  -[2|3|4|5]	device type (2=diode, 3=triode, etc)",
-	"  -f format	specify format for tagged input data",
-	"  -d		dump data in plain format for later use",
+	" Operation parameters:",
+	"  -[2|3|4|5]	valve type (2=diode, 3=triode, etc)",
+	"  -P Pa	rated anode dissipation power",
+	"  -L Vp,Ip[,R]	loadline: working point and load resistance",
 	"",
 	" Model fit options:",
-	"  ---",
+	"  -C flags	apply cuts to tube data to fit specific requirements",
+	"		(g = negative grid; p = rated power; l = loadline)",
+	"",
+	" I/O functions:",
+	"  -f format	specify format for tagged input data",
+	"  -d		dump data in plain format for later use",
 	NULL
 };
 
@@ -49,9 +54,18 @@ char *usage_msg[] = {
 /* Options */
 static int verbose = 0;
 
-static int                dtype = 3;
+static int                vtype = 3;
+static double                Pa = 0.0;
+static double                V0 = 0.0;
+static double                I0 = 0.0;
+static double                RL = 0.0;
+
 static char             *format = NULL;
 static int          output_only = 0;
+
+static int             grid_cut = 0;
+static int            power_cut = 0;
+static int         loadline_cut = 0;
 
 
 
@@ -569,7 +583,7 @@ static double triode_koren5(double p[], double V[])
 
 /* Tube model structure */
 typedef struct {
-	int dtype;		/* 2=diode, 3=triode, etc */
+	int vtype;		/* 2=diode, 3=triode, etc */
 	char *name;		/* Long model name */
 	char *macro;		/* Macro implementing Spice model */
 	int params;		/* # of model parameters to fit */
@@ -600,34 +614,64 @@ model mindex[] = {
 /* Curve data is passed as global variable */
 static int _pts_;
 static double **_data_;
+static double *_weight_;
 static model *_model_;
 
-/* Minimization criterion is least square */
+/* Minimization criterion is weighted least square */
 static double chi2(double p[])
 {
 	int i, n = _pts_;
-	double t, s = 0.0;
+	double t, s = 0.0, norm = 0.0;
 	
 	for (i = 0; i < n; i++) {
+		double w = _weight_[i];
 		double I = _data_[3][i];
 		double V[] = {_data_[0][i], _data_[1][i], _data_[2][i]};
 		
-		t = I - (*(_model_->curve))(p, V); s += t*t;
+		t = I - (*(_model_->curve))(p, V); s += w*t*t; norm += w;
 	}
 	
-	return s/n;
+	return s/norm;
 }
 
 /* Fit parametric curve model to the data using simulated annealing */
 double *fit_curve(double **data, int n, model *m)
 {
 	int i, j, k, D = m->params;
-	double *p = vector(D+1), **S;
+	double *w = vector(n), *p = vector(D+1), **S;
 	
 	_pts_ = n;
 	_data_ = data;
+	_weight_ = w;
 	_model_ = m;
 	
+	/* initialize point weights */
+	for (i = 0; i < n; i++) {
+		w[i] = 1.0;
+		
+		if (grid_cut) {
+			double V = data[1][i];
+			
+			if (V > 0.0) w[i] = 0.0;
+		}
+		
+		if (power_cut) {
+			double V = data[0][i], I = data[3][i];
+			double P = V*I/1000.0;
+			
+			w[i] *= (1.0 - tanh(16.0 * (P - 1.1*Pa)/Pa))/2.0;
+		}
+		
+		if (loadline_cut) {
+			double V = data[0][i], I = data[3][i];
+			double G = (RL != 0.0) ? 1000.0/RL : 0.0;
+			double dI = (I-I0) + G * (V-V0);
+			
+			w[i] *= exp(-16.0 * dI*dI/(I0*I0));
+		}
+	}
+	
+	/* initialize parameter vector */
 	for (i = 0; i < D; i++) {
 		if (!m->p) { p[i] = 0.0; continue; }
 		if (((int)(m->p[i]) >> 8) != PRIOR_MAGIC) { p[i] = m->p[i]; continue; }
@@ -637,29 +681,33 @@ double *fit_curve(double **data, int n, model *m)
 		p[i] = (m-j)->p[k];
 	}
 	
+	/* optimize */
 	S = new_amoeba(p, D, chi2, 1.0); anneal(S, D, chi2, 100.0, 8000, 1.0e-6);
 	restart_amoeba(S, D, chi2, 0.3); anneal(S, D, chi2,  10.0, 4000, 1.0e-6);
 	restart_amoeba(S, D, chi2, 0.1); anneal(S, D, chi2,   0.0, 2000, 1.0e-6);
 	
 	for (i = 0; i <= D; i++) p[i] = S[D+1][i]; m->p = p;
 	
+	free_vector(w);
 	free_matrix(S);
 	
 	return p;
 }
 
 /* Try all appropriate models */
-void try_all_models(double **data, int n)
+model *try_all_models(double **data, int n)
 {
-	int i, j;
-	double *p;
+	int i, j, best = 0;
+	double *p, min = HUGE;
 	
 	for (i = 0; i < sizeof(mindex)/sizeof(model); i++) {
 		model *m = &(mindex[i]);
 		int D = m->params;
 		
-		if (m->dtype != dtype) continue;
+		if (m->vtype != vtype) continue;
 		else p = fit_curve(data, n, m);
+		
+		if (p[D] < min) { best = i; min = p[D]; }
 		
 		printf("* %s: mean fit error %g mA\n", m->name, sqrt(p[D]));
 		
@@ -668,6 +716,8 @@ void try_all_models(double **data, int n)
 			printf("%.10g%s", p[j], ((j < D-1) ? "," : ""));
 		printf(")\n");
 	}
+	
+	return &(mindex[best]);
 }
 
 
@@ -808,7 +858,7 @@ double **read_data(FILE *fp, int *pts)
 		
 		m[0][n] = m[1][n] = m[2][n] = m[3][n] = 0.0;
 		
-		switch (dtype) {
+		switch (vtype) {
 			case 2:
 				if (sscanf(buffer, " %lf %lf",
 					&(m[0][n]), &(m[3][n])) < 2)
@@ -839,7 +889,7 @@ void write_data(FILE *fp, double **m, int n)
 {
 	int i;
 	
-	for (i = 0; i < n; i++) switch (dtype) {
+	for (i = 0; i < n; i++) switch (vtype) {
 		case 2:
 			fprintf(fp, "%12.10g %12.10g\n", m[0][i], m[3][i]); break;
 		case 3:
@@ -947,7 +997,7 @@ static double _loadline_(double Vp)
 double output(model *m, double Vg, double Vb, double I0, double R)
 {
 	_model_ = m; _Vg_ = Vg; _I_ = I0;
-	_Vb_ = Vb; _G_ = (R != 0.0) ? 1.0/R : 0.0;
+	_Vb_ = Vb; _G_ = (R != 0.0) ? 1000.0/R : 0.0;
 	
 	return zbrent(_loadline_, 0, 3000, 1.0e-12);
 }
@@ -967,7 +1017,7 @@ static double _swing_(double Vi)
 double drive(model *m, double Vo, double Vb, double I0, double R)
 {
 	_model_ = m; _Vg_ = bias(m, Vb, I0); _Vo_ = Vo;
-	_I_ = I0; _Vb_ = Vb; _G_ = (R != 0.0) ? 1.0/R : 0.0;
+	_I_ = I0; _Vb_ = Vb; _G_ = (R != 0.0) ? 1000.0/R : 0.0;
 	
 	return zbrent(_swing_, 0, 1000, 1.0e-12);
 }
@@ -1025,9 +1075,9 @@ void loadtune(model *m, double V, double I, double Vo)
 	
 	for (R = 100; R < 150.0e3; R *= pow(10.0, 0.02)) {
 		Vbias = bias(m, V, I);
-		Vdrive = drive(m, Vo, V, I, R/1000.0);
+		Vdrive = drive(m, Vo, V, I, R);
 		printf("%g %g %g %g %g    ", R, V, I, Vbias, Vdrive);
-		distortion(m, Vdrive, V, I, R/1000.0);
+		distortion(m, Vdrive, V, I, R);
 	}
 }
 
@@ -1055,9 +1105,9 @@ void powertune(model *m, double P, double kpd)
 		V = sqrt(P*R);
 		I = sqrt(P/R)*1000.0;
 		Vbias = bias(m, V, I);
-		Vdrive = drive(m, sqrt(kpd)*V, V, I, R/1000.0);
+		Vdrive = drive(m, sqrt(kpd)*V, V, I, R);
 		printf("%g %g %g %g %g    ", R, V, I, Vbias, Vdrive);
-		distortion(m, Vdrive, V, I, R/1000.0);
+		distortion(m, Vdrive, V, I, R);
 	}
 }
 
@@ -1071,7 +1121,7 @@ int main(int argc, char *argv[])
 	int n; double **d;
 	
 	/* Parse options */
-	while ((c = getopt(argc, argv, "hv2345f:d")) != -1)
+	while ((c = getopt(argc, argv, "hv2345P:L:f:dC:")) != -1)
 	switch (c) {
 	/* General options */
 		case 'h':				/* Help message */
@@ -1079,19 +1129,54 @@ int main(int argc, char *argv[])
 		case 'v':				/* Verbosity */
 			verbose++; break;
 	
-	/* Operation mode */
+	/* Operation parameters */
 		case '2':				/* Diode */
-			dtype = 2; break;
+			vtype = 2; break;
 		case '3':				/* Triode */
-			dtype = 3; break;
+			vtype = 3; break;
 		case '4':				/* Tetrode */
-			dtype = 4; break;
+			vtype = 4; break;
 		case '5':				/* Pentode */
-			dtype = 5; break;
+			vtype = 5; break;
+		case 'P':				/* Rated power */
+			Pa = strtod(optarg, NULL); break;
+		case 'L':				/* Loadline */
+			{
+				char *p = optarg, *q;
+				
+				V0 = strtod(p, &q);
+				if (p == q) usage();
+				
+				if (*(q++) != ',') usage();
+				I0 = strtod(q, &p);
+				if (p == q) usage();
+				
+				if (*(p++) == ',') {
+					RL = strtod(p, &q);
+					if (p == q) usage();
+				}
+			}
+			break;
+	
+	/* I/O functions */
 		case 'f':				/* Tagged data format */
 			format = optarg; break;
 		case 'd':				/* Output data only */
 			output_only = 1; break;
+	
+	/* Model fit options */
+		case 'C':				/* Data cuts */
+			while (*optarg) switch (*(optarg++)) {
+				case 'g':
+					grid_cut = 1; break;
+				case 'p':
+					power_cut = 1; break;
+				case 'l':
+					loadline_cut = 1; break;
+				default:
+					usage();
+			}
+			break;
 	
 	/* Default response */
 		default:
