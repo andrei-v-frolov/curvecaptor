@@ -4,6 +4,7 @@
 set file [lindex $argv 0]
 catch {image delete curves}
 image create photo curves -file $file
+set device [file rootname [file tail $file]]
 
 wm title . "Curve Captor -- $file"
 wm iconname . "lprt"
@@ -11,11 +12,12 @@ wm iconname . "lprt"
 
 # Curve parameters
 set val(Vp) 0; set incr(Vp) 100.0; set units(Vp) "V"
-set val(Vg) 0; set incr(Vg)   2.5; set units(Vg) "V"
+set val(Vg) 0; set incr(Vg)  -2.5; set units(Vg) "V"
 set val(Ip) 0; set incr(Ip)  10.0; set units(Ip) "mA"
 set val(Ig) 0; set incr(Ig)   1.0; set units(Ig) "mA"
 
-set param Vg; set axis 0; set autoincr 0; set markstyle "data"
+set type 3; set format {Vp Ip Vg}
+set param Vg; set axis 0; set markstyle "data"
 
 # Step parameter value
 proc step {p} {
@@ -26,11 +28,10 @@ proc step {p} {
 
 # Return current curve parameter tag
 proc ctag {} {
-	global param val axis autoincr
+	global param val axis
 	
 	set t "$param=$val($param)"
-	if $axis then { set t "<$t>" }
-	if $autoincr then { step $param }
+	if $axis then { step $param }
 	return $t
 }
 
@@ -95,70 +96,73 @@ proc draw {c x y} {
 set t .tools
 frame $t -borderwidth 3 -relief raised
 
-label $t.label -text "Tracing: "
 label $t.active -foreground red
-label $t.plabel; label $t.units; label $t.at -text "@"; 
-entry $t.param -width 6 -justify left
-entry $t.pincr -width 6 -justify right
-checkbutton $t.ai -text "auto" -variable autoincr  -padx 8 -pady 1 -relief sunken
-button $t.incr -text "increment" -command { step $param } -padx 8 -pady 0 -relief sunken
+label $t.plabel; label $t.units; label $t.at -text "@";
+entry $t.label -textvariable device -width 6 -justify left -font {courier 18 bold}
+entry $t.param -width 6 -justify left; entry $t.pincr -width 6 -justify right
+button $t.incr -text "increment" -command { step $param } -padx 0 -pady 0 -relief flat
 
 # Setup curve to be traced
-proc trace {p a} {
-	global t param axis autoincr units
+proc tracing {f p a} {
+	global t format param axis units
 	
-	set param $p; set axis $a; set autoincr $a
+	set format $f; set param $p; set axis $a;
 	
 	$t.plabel configure -text "    $p ="
 	$t.param configure -textvariable val($p)
 	$t.pincr configure -textvariable incr($p)
-	$t.units configure -text "\[$units($p)\] steps; "
+	$t.units configure -text "\[$units($p)\]"
 }
 
 set m $t.curve.menu
-menubutton $t.curve -menu $m -textvariable curve -width 29 -direction below -indicatoron yes -borderwidth 2 -relief sunk
+menubutton $t.curve -menu $m -textvariable curve -width 13 -direction below -indicatoron yes -borderwidth 2 -relief sunk
 menu $m -tearoff 0
+
+$m add cascade -menu $m.type -label "Vacuum tube type"
+$m add separator
 $m add command -label "Plate Characteristics: Vp axis" -command {
-	set curve "Plate Characteristics: Vp axis"
-	set markstyle "tick(v)"; trace Vp 1
+	set curve "Vp axis"; set markstyle "tick(v)"; tracing {Vp Ip Vg} Vp 1
 }
 $m add command -label "Plate Characteristics: Ip axis" -command {
-	set curve "Plate Characteristics: Ip axis"
-	set markstyle "tick(<)"; trace Ip 1
+	set curve "Ip axis"; set markstyle "tick(<)"; tracing {Vp Ip Vg} Ip 1
 }
 $m add command -label "Plate Characteristics Curve" -command {
-	set curve "Plate Characteristics Curve"
-	set markstyle "data"; trace Vg 0
+	set curve "Plate curve"; set markstyle "data"; tracing {Vp Ip Vg} Vg 0
 }
 $m add separator
 $m add command -label "Grid Characteristics: Vp axis" -command {
-	set curve "Grid Characteristics: Vp axis"
-	set markstyle "tick(v)"; trace Vp 1
+	set curve "Vp axis"; set markstyle "tick(v)"; tracing {Vp Ig Vg} Vp 1
 }
 $m add command -label "Grid Characteristics: Ig axis" -command {
-	set curve "Grid Characteristics: Ig axis"
-	set markstyle "tick(<)"; trace Ig 1
+	set curve "Ig axis"; set markstyle "tick(<)"; tracing {Vp Ig Vg} Ig 1
 }
 $m add command -label "Grid Characteristics Curve" -command {
-	set curve "Grid Characteristics Curve"
-	set markstyle "data"; trace Vg 0
+	set curve "Grid curve"; set markstyle "data"; tracing {Vp Ig Vg} Vg 0
 }
 $m add separator
 $m add command -label "Transfer Characteristics: Vg axis" -command {
-	set curve "Transfer Characteristics: Vg axis"
-	set markstyle "tick(v)"; trace Vg 1
+	set curve "Vg axis"; set markstyle "tick(v)"; tracing {Vg Ip Vp} Vg 1
 }
 $m add command -label "Transfer Characteristics: Ip axis" -command {
-	set curve "Transfer Characteristics: Ip axis"
-	set markstyle "tick(<)"; trace Ip 1
+	set curve "Ip axis"; set markstyle "tick(<)"; tracing {Vg Ip Vp} Ip 1
 }
 $m add command -label "Transfer Characteristics Curve" -command {
-	set curve "Transfer Characteristics Curve"
-	set markstyle "data"; trace Vp 0
+	set curve "Transfer curve"; set markstyle "data"; tracing {Vg Ip Vp} Vp 0
 }
-$m invoke 0
+$m invoke 2
 
-pack $t.label $t.curve $t.plabel $t.param $t.at $t.pincr $t.units $t.incr $t.ai -side left -expand no -pady 4
+menu $m.type -tearoff 0
+$m.type add radiobutton -label "Diode" -variable type -value 2 -command {
+	foreach i {2 3 4 6 7 8 10 11 12} { $m entryconfigure $i -state normal }
+	foreach i {6 7 8 10 11 12} { $m entryconfigure $i -state disabled }
+}
+$m.type add radiobutton -label "Triode" -variable type -value 3 -command {
+	foreach i {2 3 4 6 7 8 10 11 12} { $m entryconfigure $i -state normal }
+}
+$m.type invoke 1
+
+
+pack $t.label $t.curve $t.plabel $t.param $t.at $t.pincr $t.units $t.incr -side left -expand no -pady 4
 pack $t.active -side right -expand no -pady 4
 pack $t -side top -fill x
 
@@ -231,20 +235,27 @@ proc nudge {c dx dy} {
 
 
 
-bind $c <3> "dump $c"
+bind $c <3> "dump stdout $c"
 
-proc dump {c} {
+# Send tagged curve data to a channel
+proc dump {fp c} {
 	foreach t [$c find withtag X] {
-		puts [concat [lindex [$c gettags $t] 0] [lrange [$c coords $t] 0 1]]
+		puts $fp [concat [lindex [$c gettags $t] 0] [lrange [$c coords $t] 0 1]]
 	}
 }
 
+# Save tagged curve data to a file
+proc save_raw {c} {
+	global device
+	
+	set f [tk_getSaveFile -initialfile "$device.crv"]
+	dump [open $f a] $c
+}
 
 
-
-frame .buttons
-pack .buttons -side bottom -fill x -pady 2m
-button .buttons.dismiss -text Dismiss -command "destroy ."
-button .buttons.code -text "See Code" -command "showCode ."
-pack .buttons.dismiss .buttons.code -side left -expand 1
+set b .buttons; frame $b
+button .buttons.dismiss -text Dismiss -command {destroy .}
+button .buttons.save -text "Save Data" -command {save_raw $c}
+pack .buttons.save .buttons.dismiss -side left -expand 1
+pack $b -side bottom -fill x -pady 2m
 
