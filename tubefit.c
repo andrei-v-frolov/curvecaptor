@@ -1,4 +1,4 @@
-/* $Id: tubefit.c,v 1.10 2001/10/03 01:58:47 frolov Exp $ */
+/* $Id: tubefit.c,v 1.11 2001/10/05 01:46:14 frolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
@@ -1288,6 +1288,14 @@ void plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, double 
 					"\" -fill black -font {helvetica 8}\n",
 					X(0.735*Vmax), Y(0.9*Imax)+3,
 					sqrt(H2+Ho+He)/A*100.0, sqrt(H2)/A*100.0, sqrt(Ho)/A*100.0, sqrt(He)/A*100.0);
+			
+			fprintf(fp, "text %g %g -anchor ne -text \"", X(0.95*Vmax), Y(0.85*Imax));
+			for (i = 0; i < 10; i++) {
+				double h = sqrt(harmonic(H, i));
+				
+				fprintf(fp, "%2i %11.6fV %11.6f%% %8.2fdb\\n", i, h, h/A*100.0, 20*log10(h/A));
+			}
+			fprintf(fp, "\" -fill black -font {courier 6}\n");
 			
 			for (i = 2; i <= 16; i++) {
 				double h = sqrt(harmonic(H, i)), hdb = 20*log10(h/A), hf = -120.0;
