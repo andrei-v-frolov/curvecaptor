@@ -1,4 +1,4 @@
-/* $Id: tubefit.c,v 1.9 2001/09/23 05:40:34 frolov Exp $ */
+/* $Id: tubefit.c,v 1.10 2001/10/03 01:58:47 frolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
@@ -578,12 +578,12 @@ static double triode_koren4(double p[], double V[])
 }
 
 /* Vacuum triode; Koren model (5 parameters) */
-static double init_koren5[] = {PRIOR(0), PRIOR(1), 0.0, PRIOR(2), PRIOR(3)};
+static double init_koren5[] = {PRIOR(0), PRIOR(1), PRIOR(2), 0.0, PRIOR(3)};
 static double triode_koren5(double p[], double V[])
 {
 	double I, U;
 	double Vp = V[0], Vg = V[1];
-	double K = p[0], Kp = p[1], Kv = p[2], mu = p[3], gamma = p[4];
+	double K = p[0], Kp = p[1], mu = p[2], Kv = p[3], gamma = p[4];
 	
 	U = Vp * log(1.0 + exp(Kp + Kp*mu*Vg/sqrt(1000.0*Kv + Vp*Vp)))/Kp;
 	I = K * pow(uramp(U), gamma);
@@ -592,16 +592,28 @@ static double triode_koren5(double p[], double V[])
 }
 
 /* Vacuum triode; modified Koren model (6 parameters) */
-static double init_koren6[] = {PRMREF(2,0), PRMREF(2,1), 0.0, PRMREF(2,2), 0.0, PRMREF(2,3)};
+static double init_koren6[] = {PRMREF(2,0), 0.0, PRMREF(2,1), PRMREF(2,2), 0.0, PRMREF(2,3)};
 static double triode_koren6(double p[], double V[])
 {
 	double I, U;
 	double Vp = V[0], Vg = V[1];
-	double K = p[0], Kp = p[1], Kg = p[2], mu = p[3], nu = p[4], gamma = p[5];
+	double K = p[0], Kc = p[1], Kp = p[2], mu = p[3], nu = p[4], gamma = p[5];
 	
-	//U = Vp * log(1.0 + exp(Kp + Kp*(mu+nu*Vg/1000.0)*Vg/Vp))/Kp + Kg*Vg;
-	U = Vp * log(1.0 + exp(Kp + Kp*mu*Vg/sqrt(nu*Vg + Vp*Vp)))/Kp + Kg*Vg;
-	// Also try nu*Vp... Better for most except 6SN7.
+	U = Vp * log(1.0 + Kc + exp(Kp + Kp*(mu+nu*Vg/1000.0)*Vg/Vp))/Kp;
+	I = K * pow(uramp(U), gamma);
+	
+	return I;
+}
+
+/* Vacuum triode; modified Koren model (8 parameters) */
+static double init_koren8[] = {PRIOR(0), PRIOR(1), PRIOR(2), PRIOR(3), PRIOR(4), 0.0, 0.0, PRIOR(5)};
+static double triode_koren8(double p[], double V[])
+{
+	double I, U;
+	double Vp = V[0], Vg = V[1];
+	double K = p[0], Kc = p[1], Kp = p[2], mu = p[3], nu = p[4], Kv = p[5], Vc = p[6], gamma = p[7];
+	
+	U = Vp * log(1.0 + Kc + exp(Kp + Kp*(mu+nu*Vg/1000.0)*Vg/sqrt(Kv*Kv+(Vp-Vc)*(Vp-Vc))))/Kp;
 	I = K * pow(uramp(U), gamma);
 	
 	return I;
@@ -636,6 +648,7 @@ model mindex[] = {
 	{3, "Koren model (4 parameters)", "koren4", 4, triode_koren4, init_koren4},
 	{3, "Koren model (5 parameters)", "koren5", 5, triode_koren5, init_koren5},
 	{3, "Modified Koren model (6 parameters)", "koren6", 6, triode_koren6, init_koren6},
+	{3, "Modified Koren model (8 parameters)", "koren8", 8, triode_koren8, init_koren8},
 };
 
 
@@ -1005,8 +1018,6 @@ double zbrent(double (*f)(double), double x1, double x2, double eps)
 	#define ITMAX 100
 	#define EPS 3.0e-8
 	
-	fprintf(stderr, "%g %g  -  %g %g\n", a, fa, b, fb);
-	
 	if ((fa > 0.0 && fb > 0.0) || (fa < 0.0 && fb < 0.0))
 		error("Root must be bracketed in zbrent()");
 	
@@ -1075,7 +1086,9 @@ double bias(model *m, double Vp, double Ip)
 {
 	_model_ = m; _Vp_ = Vp; _I_ = Ip;
 	
-	return zbrent(_bias_, -1000, 500, 1.0e-12);
+	return (_bias_(0.0) > 0.0) ?
+		zbrent(_bias_, -Vp, 0, 1.0e-12):
+		zbrent(_bias_, 0, Vp, 1.0e-12);
 }
 
 
@@ -1112,15 +1125,16 @@ double drive(model *m, double Vo, double Vb, double I0, double R)
 	_model_ = m; _Vg_ = bias(m, Vb, I0); _Vo_ = Vo;
 	_I_ = I0; _Vb_ = Vb; _G_ = (R != 0.0) ? 1000.0/R : 0.0;
 	
-	return zbrent(_swing_, 0, 1000, 1.0e-12);
+	return zbrent(_swing_, 0, Vo, 1.0e-12);
 }
 
 
-/****************** Distortion analysis *******************************/
+
+/****************** Curves and waveforms ******************************/
 
 double *fft256(double F[]);
 
-/* Return the square amplitude of j-th harmonic */
+/* Return the square of amplitude of j-th harmonic */
 static double harmonic(double *H, int j)
 {
 	int i = j<<1; double hj = H[i]*H[i] + H[i+1]*H[i+1];
@@ -1129,84 +1143,6 @@ static double harmonic(double *H, int j)
 	
 	return hj;
 }
-
-/* Analyze distortion spectrum for a loadline */
-void distortion(model *m, double Vin, double Vb, double I0, double R)
-{
-	int i;
-	double Vg, *Vp = vector(256);
-	double Vbias = bias(m, Vb, I0);
-	double *H, A, H2, He = 0.0, Ho = 0.0;
-	
-	for (i = 0; i < 256; i++) {
-		Vg = Vbias + Vin*sin(M_PI*i/128.0);
-		Vp[i] = output(m, Vg, Vb, I0, R);
-	}
-	
-	H = fft256(Vp);
-	A = sqrt(harmonic(H, 1));
-	H2 = sqrt(harmonic(H, 2))/A;
-	
-	for (i = 128; i > 2; i--) {
-		if (i%2) Ho += harmonic(H, i);
-		else He += harmonic(H, i);
-	}
-	He = sqrt(He)/A; Ho = sqrt(Ho)/A;
-	
-	printf("%g %g %g %g    ", A, H2*100.0, He*100.0, Ho*100.0);
-	for (i = 0; i < 10; i++) printf("%g ", sqrt(harmonic(H, i)));
-	printf("\n");
-	
-	free_vector(H);
-}
-
-
-/* Tune load for a fixed tube bias */
-void loadtune(model *m, double V, double I, double Vo)
-{
-	double R, Vbias, Vdrive;
-	
-	for (R = 100; R < 150.0e3; R *= pow(10.0, 0.02)) {
-		Vbias = bias(m, V, I);
-		Vdrive = drive(m, Vo, V, I, R);
-		printf("%g %g %g %g %g    ", R, V, I, Vbias, Vdrive);
-		distortion(m, Vdrive, V, I, R);
-	}
-}
-
-/* Tune working point for a fixed plate power and small signal output */
-void signaltune(model *m, double P, double Vo)
-{
-	double R, V, I, Vbias, Vdrive;
-	
-	for (R = 100; R < 150.0e3; R *= pow(10.0, 0.02)) {
-		V = sqrt(P*R);
-		I = sqrt(P/R)*1000.0;
-		Vbias = bias(m, V, I);
-		Vdrive = drive(m, Vo, V, I, 0.0);
-		printf("%g %g %g %g %g    ", R, V, I, Vbias, Vdrive);
-		distortion(m, Vdrive, V, I, 0.0);
-	}
-}
-
-/* Tune working point for a fixed plate and output power */
-void powertune(model *m, double P, double kpd)
-{
-	double R, V, I, Vbias, Vdrive;
-	
-	for (R = 10; R < 15.0e3; R *= pow(10.0, 0.02)) {
-		V = sqrt(P*R);
-		I = sqrt(P/R)*1000.0;
-		Vbias = bias(m, V, I);
-		Vdrive = drive(m, sqrt(kpd)*V, V, I, R);
-		printf("%g %g %g %g %g    ", R, V, I, Vbias, Vdrive);
-		distortion(m, Vdrive, V, I, R);
-	}
-}
-
-
-
-/**********************************************************************/
 
 /* Plot plate curves with Tk toolkit */
 void plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, double Imax, double Vgm, double Vgs)
@@ -1311,12 +1247,82 @@ void plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, double 
 				X(V0)-5, Y(I0)+5, Vbias);
 		
 		if (Vout > 0.0) { Vin = drive(m, Vout, V0, I0, RL); }
+		
 		if (Vin > 0.0) {
 			V1 = output(m, Vbias+Vin, V0, I0, RL); I1 = I0+G*(V0-V1);
 			V2 = output(m, Vbias-Vin, V0, I0, RL); I2 = I0+G*(V0-V2);
 			
 			fprintf(fp, "line %g %g %g %g -fill cyan -width 3 -arrow both\n",
 					X(V1), Y(I1), X(V2), Y(I2));
+		}
+		
+		if (Vin > 0.0 && waveform) {
+			double *V = vector(256);
+			double *H, A, H2, Ho = 0.0, He = 0.0;
+			
+			fprintf(fp, "line %g %g %g %g -fill green -width 1 -dash -\n",
+					X(V0), Y(0), X(V0), Y(Imax));
+			fprintf(fp, "line %g %g %g %g -fill green -width 1 -dash -\n",
+					X(V1), Y(0), X(V1), Y(Imax));
+			fprintf(fp, "line %g %g %g %g -fill green -width 1 -dash -\n",
+					X(V2), Y(0), X(V2), Y(Imax));
+			
+			fprintf(fp, "line ");
+			for (i = 0; i < 256; i++) {
+				V[i] = output(m, Vbias + Vin*sin(M_PI*i/128.0), V0, I0, RL);
+				fprintf(fp, "%g %g ", X(V[i]), Y(I0 + 0.2*Imax*(i-128)/256.0));
+			}
+			fprintf(fp, "-smooth 1 -fill green -width 2\n");
+			
+			H = fft256(V); A = sqrt(harmonic(H, 1)); H2 = harmonic(H, 2);
+			
+			for (i = 128; i > 2; i--) {
+				if (i%2) Ho += harmonic(H, i);
+				else He += harmonic(H, i);
+			}
+			
+			fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline black -fill white -width 1\n",
+					X(0.5*Vmax),Y(0.9*Imax), X(0.97*Vmax),Y(0.9*Imax), X(0.97*Vmax),Y(0.5*Imax), X(0.5*Vmax),Y(0.5*Imax));
+			fprintf(fp, "text %g %g -anchor n -text \""
+					"THD: %.3g%% (%.3g%% second, %.3g%% odd, %.3g%% even)"
+					"\" -fill black -font {helvetica 8}\n",
+					X(0.735*Vmax), Y(0.9*Imax)+3,
+					sqrt(H2+Ho+He)/A*100.0, sqrt(H2)/A*100.0, sqrt(Ho)/A*100.0, sqrt(He)/A*100.0);
+			
+			for (i = 2; i <= 16; i++) {
+				double h = sqrt(harmonic(H, i)), hdb = 20*log10(h/A), hf = -120.0;
+				double x = 0.5 + 0.03*(i-1), y = 0.53 - ((hdb > hf) ? 0.35*(hdb-hf)/hf : 0.0);
+				
+				fprintf(fp, "line %g %g %g %g -fill yellow -width 14\n",
+						X(x*Vmax), Y(0.53*Imax), X(x*Vmax), Y(y*Imax));
+				fprintf(fp, "text %g %g -anchor n -justify center -text \"%i\" -fill black -font {helvetica 7}\n",
+						X(x*Vmax), Y(0.53*Imax)+2, i);
+				fprintf(fp, "text %g %g -anchor s -justify center -text \"%.3g\" -fill black -font {helvetica 6}\n",
+						X(x*Vmax), Y(y*Imax)-2, -hdb);
+			}
+			
+			free_vector(H);
+			free_vector(V);
+		}
+		
+		/* Loadline summary */
+		fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline black -fill white -width 1\n",
+				X(0.5*Vmax),Y(0.96*Imax), X(0.97*Vmax),Y(0.96*Imax), X(0.97*Vmax),Y(0.9*Imax), X(0.5*Vmax),Y(0.9*Imax));
+		fprintf(fp, "text %g %g -anchor w -text \""
+				"Working point: %.3g V, %.3g mA\\n"
+				"Bias: %.3g V (Rk = %.4g)"
+				"\" -fill black -font {helvetica 8}\n",
+				X(0.5*Vmax)+5, Y(0.93*Imax),
+				V0, I0, Vbias, fabs(Vbias/I0*1000.0));
+		
+		/* Signal summary */
+		if (Vin > 0.0) {
+			fprintf(fp, "text %g %g -anchor e -text \""
+					"Input: %.3g V\\n"
+					"Output: %.3g V (%.4g W)"
+					"\" -fill black -font {helvetica 8}\n",
+					X(0.97*Vmax)-5, Y(0.93*Imax),
+					Vin, fabs(V2-V1)/2.0, (RL != 0.0) ? (V2-V1)*(V2-V1)/8.0/RL : 0.0);
 		}
 	}
 	
@@ -1434,13 +1440,6 @@ int main(int argc, char *argv[])
 	
 	/* Produce requested output */
 	if (plot_curves) plate_curves(stdout, m, d, n, 0, 0, 0, 0);
-	
-	//printf("%g\n", bias(mindex+9, 125.0, 100.0));
-	//printf("%g\n", output(mindex+9, -0.0, 150.0, 30.0, 1.714));
-	
-	//powertune(mindex+9, 13.0, 0.5);
-	//signaltune(mindex+9, 13.0, 1.0);
-	//loadtune(mindex+9, 125.0, 100.0, 1.0);
 	
 	return 0;
 }
