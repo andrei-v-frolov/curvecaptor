@@ -302,7 +302,7 @@ proc curve_data {c} {
 	global backend type format
 	
 	set m [markers $c]; if {[llength $m] < 1} { return "" }
-	set d [exec -keepnewline $backend -$type -f"$format" -d << [join $m "\n"] 2>@ stderr]
+	return [exec -keepnewline $backend -$type -f"$format" -d << [join $m "\n"] 2>@ stderr]
 }
 
 # Save curve data to a file
@@ -458,9 +458,57 @@ proc model {t} {
 	set b $w.buttons; frame $b
 	button $b.plot -text Redraw -command "render $c $t"
 	button $b.print -text Print -command "print $c"
+	button $b.code -text "See Spice Code" -command "spice_code"
 	button $b.dismiss -text Dismiss -command "destroy $w"
-	pack $b.plot $b.print $b.dismiss -side left -expand 1
+	pack $b.plot $b.print $b.code $b.dismiss -side left -expand 1
 	pack $b -side bottom -fill x -pady 2m
 	
 	render $c $t
+}
+
+
+
+# Run text through m4 preprocessor
+proc m4 {h t} {
+	global argv0
+	
+	set f [file join [file dirname $argv0] "$h.m4"]
+	set fp [open $f r]; set ht [read $fp]; append ht $t; close $fp
+	
+	return [exec m4 << $ht 2>@ stderr]
+}
+
+# Inspect Spice code
+proc spice_code {} {
+	global device type macro mparams
+	
+	set w .model.code
+	catch {destroy $w}
+	toplevel $w
+	
+	wm title $w "Curve Captor -- $device Spice code"
+	wm iconname $w "valve"
+	
+	
+	set m "* $device macro model\n"
+	append m ".subckt $device  "
+	append m [lindex {{} {} {P K} {P G K}} $type]
+	append m "\n    $macro\($mparams\)\n.ends $device\n"
+	
+	
+	set t $w.text; set s $w.scroll
+	scrollbar $s -command "$t yview"
+	text $t -relief sunken -bd 2 -yscrollcommand "$s set" -setgrid 1 -width 120 -height 15
+	
+	$t insert 0.0 $m
+	$t insert end "\n\n[m4 models $m]"
+	$t mark set insert 0.0
+	
+	set b $w.buttons; frame $b
+	button $b.dismiss -text Dismiss -command "destroy $w"
+	pack $b.dismiss -side left -expand 1
+	
+	pack $b -side bottom -fill x -pady 2m
+	pack $s -side right -fill y
+	pack $t -expand yes -fill both
 }
