@@ -9,47 +9,157 @@ wm title . "Curve Captor -- $file"
 wm iconname . "lprt"
 
 
-# Global parameters
-set Vptick 100
-set Iptick 10
-set Vg 0
+# Curve parameters
+set val(Vp) 0; set incr(Vp) 100.0; set units(Vp) "V"
+set val(Vg) 0; set incr(Vg)   2.5; set units(Vg) "V"
+set val(Ip) 0; set incr(Ip)  10.0; set units(Ip) "mA"
+set val(Ig) 0; set incr(Ig)   1.0; set units(Ig) "mA"
+
+set param Vg; set axis 0; set autoincr 0; set markstyle "data"
+
+# Step parameter value
+proc step {p} {
+	global val incr
+	
+	set val($p) [expr $val($p)+$incr($p)]
+}
+
+# Return current curve parameter tag
+proc ctag {} {
+	global param val axis autoincr
+	
+	set t "$param=$val($param)"
+	if $axis then { set t "<$t>" }
+	if $autoincr then { step $param }
+	return $t
+}
+
+# Draw current curve mark
+proc draw {c x y} {
+	global markstyle
+	
+	switch $markstyle {
+		"tick(v)" {
+			$c create polygon\
+				$x $y\
+				[expr $x-4] [expr $y-13]\
+				[expr $x+5] [expr $y-13]\
+				$x $y\
+				[expr $x-6] $y\
+				[expr $x+7] $y\
+			-width 1 -outline red
+		}
+		"tick(^)" {
+			$c create polygon\
+				$x $y\
+				[expr $x-4] [expr $y+13]\
+				[expr $x+5] [expr $y+13]\
+				$x $y\
+				[expr $x-6] $y\
+				[expr $x+7] $y\
+			-width 1 -outline red
+		}
+		"tick(<)" {
+			$c create polygon\
+				$x $y\
+				[expr $x+13] [expr $y-4]\
+				[expr $x+13] [expr $y+5]\
+				$x $y\
+				$x [expr $y-6]\
+				$x [expr $y+7]\
+			-width 1 -outline red
+		}
+		"tick(>)" {
+			$c create polygon\
+				$x $y\
+				[expr $x-13] [expr $y-4]\
+				[expr $x-13] [expr $y+5]\
+				$x $y\
+				$x [expr $y-6]\
+				$x [expr $y+7]\
+			-width 1 -outline red
+		}
+		default {
+			$c create line\
+				$x $y $x [expr $y+7]\
+				$x $y [expr $x+7] $y\
+				$x $y $x [expr $y-6]\
+				$x $y [expr $x-6] $y\
+			-width 1
+		}
+	}
+}
 
 
 # Toolbar
 set t .tools
 frame $t -borderwidth 3 -relief raised
 
-label $t.label -text "Tracing: "; label $t.plabel
-entry $t.param -width 5 -justify right
-label $t.units -textvariable units
+label $t.label -text "Tracing: "
+label $t.active -foreground red
+label $t.plabel; label $t.units; label $t.at -text "@"; 
+entry $t.param -width 6 -justify left
+entry $t.pincr -width 6 -justify right
+checkbutton $t.ai -text "auto" -variable autoincr  -padx 8 -pady 1 -relief sunken
+button $t.incr -text "increment" -command { step $param } -padx 8 -pady 0 -relief sunken
+
+# Setup curve to be traced
+proc trace {p a} {
+	global t param axis autoincr units
+	
+	set param $p; set axis $a; set autoincr $a
+	
+	$t.plabel configure -text "    $p ="
+	$t.param configure -textvariable val($p)
+	$t.pincr configure -textvariable incr($p)
+	$t.units configure -text "\[$units($p)\] steps; "
+}
 
 set m $t.curve.menu
-menubutton $t.curve -menu $m -textvariable curve -direction below -indicatoron yes -width 12 -borderwidth 2 -relief sunk
+menubutton $t.curve -menu $m -textvariable curve -width 29 -direction below -indicatoron yes -borderwidth 2 -relief sunk
 menu $m -tearoff 0
-$m add command -label "Vp axis" -command {
-	set curve "Vp axis"; set units "\[V\]"
-	$t.param configure -textvariable Vptick
-	$t.plabel configure -text ", tickmarks every"
-	
-	set markstyle 0
+$m add command -label "Plate Characteristics: Vp axis" -command {
+	set curve "Plate Characteristics: Vp axis"
+	set markstyle "tick(v)"; trace Vp 1
 }
-$m add command -label "Ip axis" -command {
-	set curve "Ip axis"; set units "\[mA\]"
-	$t.param configure -textvariable Iptick
-	$t.plabel configure -text ", tickmarks every"
-	
-	set markstyle 1
+$m add command -label "Plate Characteristics: Ip axis" -command {
+	set curve "Plate Characteristics: Ip axis"
+	set markstyle "tick(<)"; trace Ip 1
 }
-$m add command -label "Plate curve" -command {
-	set curve "Plate curve"; set units "\[V\]"
-	$t.param configure -textvariable Vg
-	$t.plabel configure -text "@ grid voltage"
-	
-	set markstyle 2
+$m add command -label "Plate Characteristics Curve" -command {
+	set curve "Plate Characteristics Curve"
+	set markstyle "data"; trace Vg 0
+}
+$m add separator
+$m add command -label "Grid Characteristics: Vp axis" -command {
+	set curve "Grid Characteristics: Vp axis"
+	set markstyle "tick(v)"; trace Vp 1
+}
+$m add command -label "Grid Characteristics: Ig axis" -command {
+	set curve "Grid Characteristics: Ig axis"
+	set markstyle "tick(<)"; trace Ig 1
+}
+$m add command -label "Grid Characteristics Curve" -command {
+	set curve "Grid Characteristics Curve"
+	set markstyle "data"; trace Vg 0
+}
+$m add separator
+$m add command -label "Transfer Characteristics: Vg axis" -command {
+	set curve "Transfer Characteristics: Vg axis"
+	set markstyle "tick(v)"; trace Vg 1
+}
+$m add command -label "Transfer Characteristics: Ip axis" -command {
+	set curve "Transfer Characteristics: Ip axis"
+	set markstyle "tick(<)"; trace Ip 1
+}
+$m add command -label "Transfer Characteristics Curve" -command {
+	set curve "Transfer Characteristics Curve"
+	set markstyle "data"; trace Vp 0
 }
 $m invoke 0
 
-pack $t.label $t.curve $t.plabel $t.param $t.units -side left -expand no -pady 4
+pack $t.label $t.curve $t.plabel $t.param $t.at $t.pincr $t.units $t.incr $t.ai -side left -expand no -pady 4
+pack $t.active -side right -expand no -pady 4
 pack $t -side top -fill x
 
 
@@ -78,59 +188,13 @@ bind . <KP_Page_Up> "nudge $c 1 -1"
 bind . <KP_End> "nudge $c -1 1"
 bind . <KP_Page_Down> "nudge $c 1 1"
 
-# Return current curve tag
-proc ctag {} {
-	global markstyle Vptick Iptick Vg
-	
-	switch $markstyle {
-		0 { return "Vp@$Vptick" }
-		1 { return "Ip@$Iptick" }
-		2 { return "Vg=$Vg" }
-		default { error "Undefined curve style" }
-	}
-}
-
-# Draw cross-hairs
-proc draw {c x y} {
-	global markstyle
-	
-	switch $markstyle {
-		0 {
-			$c create polygon\
-				$x $y\
-				[expr $x-4] [expr $y-13]\
-				[expr $x+5] [expr $y-13]\
-				$x $y\
-				[expr $x-6] $y\
-				[expr $x+7] $y\
-			-width 1 -outline red
-		}
-		1 {
-			$c create polygon\
-				$x $y\
-				[expr $x+13] [expr $y-4]\
-				[expr $x+13] [expr $y+5]\
-				$x $y\
-				$x [expr $y-6]\
-				$x [expr $y+7]\
-			-width 1 -outline red
-		}
-		default {
-			$c create line\
-				$x $y $x [expr $y+7]\
-				$x $y [expr $x+7] $y\
-				$x $y $x [expr $y-6]\
-				$x $y [expr $x-6] $y\
-			-width 1
-		}
-	}
-}
-
 # Activate tag
 proc activate {c t} {
 	$c itemconf active -fill red; $c dtag active
 	$c addtag active withtag $t; $c itemconf active -fill orange
 	$c raise active
+	
+	.tools.active configure -text "Active marker: [lindex [$c gettags $t] 0] "
 }
 
 # New cross-hairs mark
