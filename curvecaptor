@@ -1,0 +1,93 @@
+#!/usr/bin/wish
+
+set file [lindex $argv 0]
+catch {image delete curves}
+image create photo curves -file $file
+
+wm title . "Curve Captor -- $file"
+wm iconname . "lprt"
+
+set c .canvas
+canvas $c -width [image width curves] -height [image height curves]
+$c create image 0 0 -anchor nw -image curves
+pack $c -side top -padx .5m -pady .5m
+
+bind $c <1> "mark $c %x %y"
+bind $c <B1-Motion> "move $c %x %y"
+
+$c bind X <2> "grab $c %x %y"
+$c bind X <B2-Motion> "move $c %x %y"
+
+bind . <Left> "nudge $c -1 0"
+bind . <Right> "nudge $c 1 0"
+bind . <Up> "nudge $c 0 -1"
+bind . <Down> "nudge $c 0 1"
+bind . <KP_Left> "nudge $c -1 0"
+bind . <KP_Right> "nudge $c 1 0"
+bind . <KP_Up> "nudge $c 0 -1"
+bind . <KP_Down> "nudge $c 0 1"
+bind . <KP_Home> "nudge $c -1 -1"
+bind . <KP_Page_Up> "nudge $c 1 -1"
+bind . <KP_End> "nudge $c -1 1"
+bind . <KP_Page_Down> "nudge $c 1 1"
+
+# Activate tag
+proc activate {c t} {
+	$c itemconf active -fill red; $c dtag active
+	$c addtag active withtag $t; $c itemconf active -fill orange
+	$c raise active
+}
+
+# Draw cross-hairs mark
+proc mark {c x y} {
+	activate $c [
+		$c create line\
+			$x $y $x [expr $y+7]\
+			$x $y [expr $x+7] $y\
+			$x $y $x [expr $y-6]\
+			$x $y [expr $x-6] $y\
+		-width 1 -fill red]
+	$c addtag X withtag active
+	global X Y; set X $x; set Y $y
+}
+
+# Grab mark for moving
+proc grab {c x y} {
+	activate $c current
+	global X Y; set X $x; set Y $y
+}
+
+# Move active mark
+proc move {c x y} {
+	global X Y; nudge $c [expr $x-$X] [expr $y-$Y]; set X $x; set Y $y
+}
+
+# Nudge active mark
+proc nudge {c dx dy} {
+	if {[$c find withtag active] == ""} {
+		return
+	}
+	
+	$c move active $dx $dy
+}
+
+
+
+
+bind $c <3> "dump $c X"
+
+proc dump {c tag} {
+	foreach t [$c find withtag $tag] {
+		puts [concat $tag [lrange [$c coords $t] 0 1]]
+	}
+}
+
+
+
+
+frame .buttons
+pack .buttons -side bottom -fill x -pady 2m
+button .buttons.dismiss -text Dismiss -command "destroy ."
+button .buttons.code -text "See Code" -command "showCode ."
+pack .buttons.dismiss .buttons.code -side left -expand 1
+
