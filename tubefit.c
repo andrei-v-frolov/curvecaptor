@@ -1,4 +1,4 @@
-/* $Id: tubefit.c,v 1.11 2001/10/05 01:46:14 frolov Exp $ */
+/* $Id: tubefit.c,v 1.12 2002/02/07 04:15:07 frolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
@@ -20,13 +20,15 @@
 #include <stdarg.h>
 #include <math.h>
 
+#define WAVE_PTS 64
+
 
 
 /******************* Options and defaults *****************************/
 
 /* Usage */
 char *usage_msg[] = {
-	"Vacuum tube model builder, Version 0.1",
+	"Vacuum tube model builder, Version " VERSION,
 	"Author: Andrei Frolov <andrei@phys.ualberta.ca>",
 	"",
 	"Usage: " SELF " -[2|3|4|5] [...] < curve.dat",
@@ -37,7 +39,7 @@ char *usage_msg[] = {
 	"",
 	" Operation parameters:",
 	"  -[2|3|4|5]	valve type (2=diode, 3=triode, etc)",
-	"  -P Pa	rated anode dissipation power",
+	"  -P Pa 	rated anode dissipation power",
 	"  -L Vp,Ip[,R]	loadline: working point and load resistance",
 	"  -[I|O] V	specify input/output AC signal amplitude",
 	"",
@@ -1132,22 +1134,42 @@ double drive(model *m, double Vo, double Vb, double I0, double R)
 
 /****************** Curves and waveforms ******************************/
 
-double *fft256(double F[]);
+#ifdef FFTW
 
-/* Return the square of amplitude of j-th harmonic */
-static double harmonic(double *H, int j)
+#include <rfftw.h>
+
+/* Calculate power spectrum and harmonic distortion */
+static void distortion(double *f, double *S, double *D, int N)
 {
-	int i = j<<1; double hj = H[i]*H[i] + H[i+1]*H[i+1];
+	int k; double F[N], N2 = N*N;
+	rfftw_plan p = rfftw_create_plan(N, FFTW_REAL_TO_COMPLEX, FFTW_ESTIMATE);
 	
-	if (j) { i = (256-j)<<1; hj += H[i]*H[i] + H[i+1]*H[i+1]; hj *= 2.0; }
+	rfftw_one(p, f, F);
 	
-	return hj;
+	/* Power spectrum */
+	S[0] = F[0]*F[0]/N2;				/* DC component */
+	for (k = 1; k < (N+1)/2; k++)			/* k-th harmonic */
+		S[k] = 4.0*(F[k]*F[k] + F[N-k]*F[N-k])/N2;
+	if (N % 2 == 0) S[N/2] = 4.0*F[N/2]*F[N/2]/N2;	/* Nyquist freq */
+	
+	/* Harmonic distortion */
+	D[0] = D[1] = 0.0;
+	for (k = N/2; k > 1; k--) {
+		D[k] = sqrt(S[k]/S[1]);
+		if (k > 2) D[k % 2] += S[k];
+	}
+	D[0] = sqrt(D[0]/S[1]);
+	D[1] = sqrt(D[1]/S[1]);
+	
+	rfftw_destroy_plan(p);
 }
+#endif /* FFTW */
+
 
 /* Plot plate curves with Tk toolkit */
 void plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, double Imax, double Vgm, double Vgs)
 {
-	int i; double Vp, Vg, Ip;
+	int i; double Vp, Vg, Ip, t;
 	
 	/* Canvas layout: 720x576       */
 	/* Margins: l=40,r=40,t=40,b=20 */
@@ -1158,12 +1180,12 @@ void plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, double 
 	/* Auto ranges */
 	if ((Vmax == 0.0) && data) {
 		for (i = 0; i < n; i++) if (data[0][i] > Vmax) Vmax = data[0][i];
-		i = 5.0 * pow(10.0, floor(log10(Vmax))-1); Vmax = i * ceil(Vmax/i);
+		t = 5.0 * pow(10.0, floor(log10(Vmax))-1); Vmax = t * ceil(Vmax/t);
 	}
 	
 	if ((Imax == 0.0) && data) {
 		for (i = 0; i < n; i++) if (data[3][i] > Imax) Imax = data[3][i];
-		i = 5.0 * pow(10.0, floor(log10(Imax))-1); Imax = i * ceil(Imax/i);
+		t = 5.0 * pow(10.0, floor(log10(Imax))-1); Imax = t * ceil(Imax/t);
 	}
 	
 	if ((Vgm == 0.0) && data) {
@@ -1257,8 +1279,8 @@ void plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, double 
 		}
 		
 		if (Vin > 0.0 && waveform) {
-			double *V = vector(256);
-			double *H, A, H2, Ho = 0.0, He = 0.0;
+			int N = WAVE_PTS;
+			double *V = vector(N), *S = vector(N/2+1), *D = vector(N/2+1);
 			
 			fprintf(fp, "line %g %g %g %g -fill green -width 1 -dash -\n",
 					X(V0), Y(0), X(V0), Y(Imax));
@@ -1268,18 +1290,14 @@ void plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, double 
 					X(V2), Y(0), X(V2), Y(Imax));
 			
 			fprintf(fp, "line ");
-			for (i = 0; i < 256; i++) {
-				V[i] = output(m, Vbias + Vin*sin(M_PI*i/128.0), V0, I0, RL);
-				fprintf(fp, "%g %g ", X(V[i]), Y(I0 + 0.2*Imax*(i-128)/256.0));
+			for (i = 0; i < N; i++) {
+				V[i] = output(m, Vbias + Vin*sin(2.0*M_PI*i/N), V0, I0, RL);
+				fprintf(fp, "%g %g ", X(V[i]), Y(I0 + 0.2*Imax*(i-N/2)/N));
 			}
 			fprintf(fp, "-smooth 1 -fill green -width 2\n");
 			
-			H = fft256(V); A = sqrt(harmonic(H, 1)); H2 = harmonic(H, 2);
-			
-			for (i = 128; i > 2; i--) {
-				if (i%2) Ho += harmonic(H, i);
-				else He += harmonic(H, i);
-			}
+			#ifdef FFTW
+			distortion(V, S, D, N);
 			
 			fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline black -fill white -width 1\n",
 					X(0.5*Vmax),Y(0.9*Imax), X(0.97*Vmax),Y(0.9*Imax), X(0.97*Vmax),Y(0.5*Imax), X(0.5*Vmax),Y(0.5*Imax));
@@ -1287,18 +1305,16 @@ void plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, double 
 					"THD: %.3g%% (%.3g%% second, %.3g%% odd, %.3g%% even)"
 					"\" -fill black -font {helvetica 8}\n",
 					X(0.735*Vmax), Y(0.9*Imax)+3,
-					sqrt(H2+Ho+He)/A*100.0, sqrt(H2)/A*100.0, sqrt(Ho)/A*100.0, sqrt(He)/A*100.0);
+					100.0*sqrt(D[0]*D[0]+D[1]*D[1]+D[2]*D[2]), 100.0*D[2], 100.0*D[1], 100.0*D[0]);
 			
 			fprintf(fp, "text %g %g -anchor ne -text \"", X(0.95*Vmax), Y(0.85*Imax));
-			for (i = 0; i < 10; i++) {
-				double h = sqrt(harmonic(H, i));
-				
-				fprintf(fp, "%2i %11.6fV %11.6f%% %8.2fdb\\n", i, h, h/A*100.0, 20*log10(h/A));
-			}
+			for (i = 0; i < 10; i++)
+				fprintf(fp, "%2i %11.6fV %11.6f%% %8.2fdb\\n", i,
+					sqrt(S[i]), 100.0*sqrt(S[i]/S[1]), 10.0*log10(S[i]/S[1]));
 			fprintf(fp, "\" -fill black -font {courier 6}\n");
 			
 			for (i = 2; i <= 16; i++) {
-				double h = sqrt(harmonic(H, i)), hdb = 20*log10(h/A), hf = -120.0;
+				double hdb = 20*log10(D[i]), hf = -120.0;
 				double x = 0.5 + 0.03*(i-1), y = 0.53 - ((hdb > hf) ? 0.35*(hdb-hf)/hf : 0.0);
 				
 				fprintf(fp, "line %g %g %g %g -fill yellow -width 14\n",
@@ -1308,9 +1324,9 @@ void plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, double 
 				fprintf(fp, "text %g %g -anchor s -justify center -text \"%.3g\" -fill black -font {helvetica 6}\n",
 						X(x*Vmax), Y(y*Imax)-2, -hdb);
 			}
+			#endif /* FFTW */
 			
-			free_vector(H);
-			free_vector(V);
+			free_vector(V); free_vector(S); free_vector(D);
 		}
 		
 		/* Loadline summary */
