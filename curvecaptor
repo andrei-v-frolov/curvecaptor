@@ -1,13 +1,20 @@
 #!/usr/bin/wish
 
+# Curve Captor - vacuum tube curve capture and model builder tool
+# 
+# Copyright (C) 2001 Andrei Frolov <andrei@phys.ualberta.ca>
+# Distributed under the terms of GNU Public License.
+
+
 # Initialization
 set file [lindex $argv 0]
 catch {image delete curves}
 image create photo curves -file $file
 set device [file rootname [file tail $file]]
+set backend [file join [file dirname $argv0] tubefit]
 
 wm title . "Curve Captor -- $file"
-wm iconname . "lprt"
+wm iconname . "valve"
 
 
 # Curve parameters
@@ -232,10 +239,21 @@ proc nudge {c dx dy} {
 }
 
 
+# Return current markers as a list
+proc markers {c} {
+	set ml {}
+	
+	foreach t [$c find withtag X] {
+		lappend ml [concat [lindex [$c gettags $t] 0] [lrange [$c coords $t] 0 1] [lindex [$c gettags $t] 1] ]
+	}
+	
+	return $ml
+}
+
 # Send tagged curve data to a channel
 proc dump {fp c} {
-	foreach t [$c find withtag X] {
-		puts $fp [concat [lindex [$c gettags $t] 0] [lrange [$c coords $t] 0 1] [lindex [$c gettags $t] 1] ]
+	foreach t [markers $c] {
+		puts $fp $t
 	}
 }
 
@@ -265,11 +283,67 @@ proc load_markers {c} {
 }
 
 
+
 set b .buttons; frame $b
-button $b.capture -text "Capture Curve" -command {}
 button $b.load -text "Load Markers" -command {load_markers $c}
 button $b.save -text "Save Markers" -command {save_markers $c}
+button $b.capture -text "Capture Curve" -command {capture_data $c}
 button $b.dismiss -text Dismiss -command {destroy .}
-pack $b.capture $b.load $b.save $b.dismiss -side left -expand 1
+pack $b.load $b.save $b.capture $b.dismiss -side left -expand 1
 pack $b -side bottom -fill x -pady 2m
 
+
+
+# Open curve data window
+proc curve_data {c} {
+	global backend type format
+	
+	set m [markers $c]; if {[llength $m] < 1} { return "" }
+	set d [exec -keepnewline $backend -$type -f"$format" -d << [join $m "\n"]]
+}
+
+# Save curve data to a file
+proc save_data {t} {
+	global device
+	
+	set f [tk_getSaveFile -initialfile "$device.dat"]
+	set fp [open $f w]; puts -nonewline $fp [$t get 0.0 end]; close $fp
+}
+
+# Load curve data from a file
+proc load_data {t} {
+	global device
+	
+	set f [tk_getOpenFile -initialfile "$device.dat"]
+	set fp [open $f r]; $t insert end [read -nonewline $fp]; close $fp
+}
+
+# Capture curve and open data window
+proc capture_data {c} {
+	global device
+	
+	set w .data
+	catch {destroy $w}
+	toplevel $w
+	
+	wm title $w "Curve Captor -- $device curve data"
+	wm iconname $w "valve"
+	
+	set t $w.text; set s $w.scroll
+	scrollbar $s -command "$t yview"
+	text $t -relief sunken -bd 2 -yscrollcommand "$s set" -setgrid 1 -width 64 -height 64
+	
+	$t insert 0.0 [curve_data $c]
+	$t mark set insert 0.0
+	
+	set b $w.buttons; frame $b
+	button $b.load -text "Load Data" -command "load_data $t"
+	button $b.save -text "Save Data" -command "save_data $t"
+	button $b.model -text "Build Model" -command ""
+	button $b.dismiss -text Dismiss -command "destroy $w"
+	pack $b.load $b.save $b.model $b.dismiss -side left -expand 1
+	
+	pack $b -side bottom -fill x -pady 2m
+	pack $s -side right -fill y
+	pack $t -expand yes -fill both
+}
