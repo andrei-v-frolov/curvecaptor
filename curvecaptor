@@ -271,6 +271,8 @@ proc save_markers {c} {
 	global device
 	
 	set f [tk_getSaveFile -initialfile "$device.crv"]
+	if {[string length $f] == 0} { return }
+	
 	set fp [open $f w]; dump $fp $c; close $fp
 }
 
@@ -279,6 +281,8 @@ proc load_markers {c} {
 	global device
 	
 	set f [tk_getOpenFile -initialfile "$device.crv"]
+	if {[string length $f] == 0} { return }
+	
 	set fp [open $f r]; slurp $fp $c; close $fp
 }
 
@@ -306,6 +310,8 @@ proc save_data {t} {
 	global device
 	
 	set f [tk_getSaveFile -initialfile "$device.dat"]
+	if {[string length $f] == 0} { return }
+	
 	set fp [open $f w]; puts -nonewline $fp [$t get 0.0 end]; close $fp
 }
 
@@ -314,6 +320,8 @@ proc load_data {t} {
 	global device
 	
 	set f [tk_getOpenFile -initialfile "$device.dat"]
+	if {[string length $f] == 0} { return }
+	
 	set fp [open $f r]; $t insert end [read -nonewline $fp]; close $fp
 }
 
@@ -352,14 +360,41 @@ proc capture_data {c} {
 # Print canvas as a Postscript file
 proc print {c} {
 	set f [tk_getSaveFile -initialfile "|lpr"]
-	if {[set p [string first "|" $f]] != -1} { set f [string range $f $p end] }
+	if {[string length $f] == 0} { return }
+	if {[set p [string first "|" $f]] != -1} {
+		set f [string range $f $p end]
+	}
 	
 	set fp [open $f w]; puts $fp [$c postscript -rotate 1]; close $fp
 }
 
+# Render curves plot on a canvas
+proc render {c t} {
+	global Pa I0 V0 RL Vin Vout wave signal
+	global backend device type macro mparams
+	
+	# Backend options
+	set b {$backend -$type -M "$macro\($mparams\)"}
+	if {$Pa > 0} { append b { -P$Pa} }
+	if {($V0 > 0) && ($I0 > 0)} {
+		append b { -L$V0,$I0}
+		if {$RL > 0} { append b {,$RL} }
+	}
+	if {($signal == "input") && ($Vin > 0)} { append b { -I$Vin} }
+	if {($signal == "output") && ($Vout > 0)} { append b { -O$Vout} }
+	if {$wave} { append b { -w} }
+	append b { -p << [$t get 0.0 end] 2>@ stderr}
+	
+	# Run backend
+	set p [eval "exec $b"]; $c delete all; foreach i [split $p "\n"] { eval "$c create $i" }
+	$c create text 675 26 -anchor e -font {courier 18 bold} -text "$device" -fill black
+	
+	update
+}
+
 # Build models and inspect the fit
 proc model {t} {
-	global backend device type
+	global backend device type macro mparams
 	
 	set w .model
 	catch {destroy $w}
@@ -368,20 +403,64 @@ proc model {t} {
 	wm title $w "Curve Captor -- $device model"
 	wm iconname $w "valve"
 	
+	
+	# Operation parameters
+	set f $w.pframe
+	frame $f -borderwidth 3 -relief raised
+	label $f.l1 -text "Rated power: "
+	label $f.l2 -text "W    Working point: "
+	label $f.l3 -text "V, "
+	label $f.l4 -text "mA; load "
+	label $f.l5 -text "R"
+	label $f.l6 -text "V"
+	
+	entry $f.pa -width 4 -justify right -textvariable Pa
+	entry $f.v0 -width 6 -justify right -textvariable V0
+	entry $f.i0 -width 6 -justify right -textvariable I0
+	entry $f.rl -width 6 -justify right -textvariable RL
+	checkbutton $f.wave -variable wave -text "AC signal"
+	entry $f.vac -width 6 -justify right
+	
+	set m $f.sig.menu
+	menubutton $f.sig -menu $m -textvariable signal -width 5 -direction below -indicatoron no -borderwidth 0 -relief sunk
+	menu $m -tearoff 0
+	$m add command -label "input" -command "set signal input; $f.vac configure -textvariable Vin"
+	$m add command -label "output" -command "set signal output; $f.vac configure -textvariable Vout"
+	$m invoke 0
+	
+	pack $f.l1 $f.pa $f.l2 $f.v0 $f.l3 $f.i0 $f.l4 $f.rl $f.l5 -side left -expand no -pady 4
+	pack $f.l6 $f.vac $f.sig $f.wave -side right -expand no -pady 4
+	pack $f -side top -fill x
+	
+	
+	# Plot canvas
 	set c $w.canvas
 	canvas $c -width 720 -height 576 -background white
 	$c create text 360 288 -anchor c -text "Fitting model parameters; please wait..." -fill black
-	pack $c -side top -padx .5m -pady .5m
+	pack $c -side top -padx .5m -pady .5m; update
 	
+	
+	# Model selector
+	set f $w.mframe; set m $f.macro.menu
+	frame $f -borderwidth 3 -relief raised
+	menubutton $f.macro -menu $m -textvariable macro -width 7 -direction above -indicatoron yes -borderwidth 2 -relief sunk
+	entry $f.param -width 84 -justify left -textvariable mparams
+	
+	menu $m -tearoff 0
+	set p [exec $backend -v -$type -m << [$t get 0.0 end] 2>@ stderr]
+	foreach i [split $p "\n"] { eval "$m $i" }
+	
+	pack $f.macro $f.param -side left -expand 1 -pady 4
+	pack $f -side top -fill x
+	
+	
+	# Action buttons
 	set b $w.buttons; frame $b
+	button $b.plot -text Redraw -command "render $c $t"
 	button $b.print -text Print -command "print $c"
 	button $b.dismiss -text Dismiss -command "destroy $w"
-	pack $b.print $b.dismiss -side left -expand 1
+	pack $b.plot $b.print $b.dismiss -side left -expand 1
 	pack $b -side bottom -fill x -pady 2m
 	
-	update
-	
-	set p [exec $backend -v -$type << [$t get 0.0 end] 2>@ stderr]
-	foreach i [split $p "\n"] { eval "$c create $i" }
-	$c create text 675 26 -anchor e -font {courier 18 bold} -text "$device" -fill black
+	render $c $t
 }
