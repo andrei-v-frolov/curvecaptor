@@ -1,4 +1,4 @@
-/* $Id: tubefit.c,v 1.12 2002/02/07 04:15:07 frolov Exp $ */
+/* $Id: tubefit.c,v 1.13 2002/02/12 01:48:33 frolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
@@ -1073,7 +1073,7 @@ double zbrent(double (*f)(double), double x1, double x2, double eps)
 
 
 /* Working point and other stuff is passed in global variables */
-static double _Vp_, _Vg_, _I_, _Vb_, _G_, _Vo_;
+static double _Vp_, _Vg_, _I_, _Vb_, _G_, _Vo_, _Vbias_;
 
 
 /* Find grid bias for a given working point */
@@ -1089,10 +1089,12 @@ double bias(model *m, double Vp, double Ip)
 	_model_ = m; _Vp_ = Vp; _I_ = Ip;
 	
 	return (_bias_(0.0) > 0.0) ?
-		zbrent(_bias_, -Vp, 0, 1.0e-12):
-		zbrent(_bias_, 0, Vp, 1.0e-12);
+		zbrent(_bias_, -Vp, 0.0, 1.0e-12):
+		zbrent(_bias_, 0.0, +Vp, 1.0e-12);
 }
 
+
+/****************** Single-ended loadline *****************************/
 
 /* Find tube output on a given loadline */
 static double _loadline_(double Vp)
@@ -1114,20 +1116,64 @@ double output(model *m, double Vg, double Vb, double I0, double R)
 /* Find grid drive for a given output voltage swing */
 static double _swing_(double Vi)
 {
-	double Vg = _Vg_, Vmin, Vmax;
+	double Vmin, Vmax;
 	
-	_Vg_ = Vg+Vi; Vmin = zbrent(_loadline_, 0, 3000, 1.0e-12);
-	_Vg_ = Vg-Vi; Vmax = zbrent(_loadline_, 0, 3000, 1.0e-12);
+	_Vg_ = _Vbias_+Vi; Vmin = zbrent(_loadline_, 0, 3000, 1.0e-12);
+	_Vg_ = _Vbias_-Vi; Vmax = zbrent(_loadline_, 0, 3000, 1.0e-12);
 	
-	_Vg_ = Vg; return fabs(Vmax-Vmin) - 2.0*_Vo_;
+	return fabs(Vmax-Vmin) - 2.0*_Vo_;
 }
 
 double drive(model *m, double Vo, double Vb, double I0, double R)
 {
-	_model_ = m; _Vg_ = bias(m, Vb, I0); _Vo_ = Vo;
+	_model_ = m; _Vbias_ = bias(m, Vb, I0); _Vo_ = Vo;
 	_I_ = I0; _Vb_ = Vb; _G_ = (R != 0.0) ? 1000.0/R : 0.0;
 	
 	return zbrent(_swing_, 0, Vo, 1.0e-12);
+}
+
+
+/****************** Push-pull loadline ********************************/
+
+/* Find tube output on a given push-pull loadline */
+static double _pp_loadline_(double Vp)
+{
+	double V1[] = {_Vb_+Vp, _Vbias_+_Vg_, _Vb_+Vp},
+	       V2[] = {_Vb_-Vp, _Vbias_-_Vg_, _Vb_-Vp},
+	       Ip1 = (_Vb_+Vp > 0) ? (*(_model_->curve))(_model_->p, V1) : 0.0,
+	       Ip2 = (_Vb_-Vp > 0) ? (*(_model_->curve))(_model_->p, V2) : 0.0;
+	
+	return (Ip2-Ip1) - 2.0*Vp*_G_;
+}
+
+double pp_output(model *m, double Vg, double Vbias, double Vb, double R)
+{
+	_model_ = m; _Vg_ = Vg; _Vbias_ = Vbias;
+	_Vb_ = Vb; _G_ = (R != 0.0) ? 1000.0/R : 0.0;
+	
+	return zbrent(_pp_loadline_, -Vb, Vb, 1.0e-12);
+}
+
+
+/* Find grid drive for a given push-pull output voltage swing */
+static double _pp_loadline2_(double Vg)
+{
+	double V1[] = {_Vb_+_Vp_, _Vbias_+Vg, _Vb_+_Vp_},
+	       V2[] = {_Vb_-_Vp_, _Vbias_-Vg, _Vb_-_Vp_},
+	       Ip1 = (_Vb_+_Vp_ > 0) ? (*(_model_->curve))(_model_->p, V1) : 0.0,
+	       Ip2 = (_Vb_-_Vp_ > 0) ? (*(_model_->curve))(_model_->p, V2) : 0.0;
+	
+	return (Ip2-Ip1) - 2.0*_Vp_*_G_;
+}
+
+double pp_drive(model *m, double Vp, double Vbias, double Vb, double R)
+{
+	_model_ = m; _Vp_ = Vp; _Vbias_ = Vbias;
+	_Vb_ = Vb; _G_ = (R != 0.0) ? 1000.0/R : 0.0;
+	
+	return (Vp > 0.0) ?
+		zbrent(_pp_loadline2_, -Vp, 0.0, 1.0e-12):
+		zbrent(_pp_loadline2_, 0.0, +Vp, 1.0e-12);
 }
 
 
@@ -1166,8 +1212,8 @@ static void distortion(double *f, double *S, double *D, int N)
 #endif /* FFTW */
 
 
-/* Plot plate curves with Tk toolkit */
-void plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, double Imax, double Vgm, double Vgs)
+/* Plot SE plate curves with Tk toolkit */
+void se_plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, double Imax, double Vgm, double Vgs)
 {
 	int i; double Vp, Vg, Ip, t;
 	
@@ -1233,7 +1279,7 @@ void plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, double 
 			fprintf(fp, "%g %g ", X(Vp), Y(Ip));
 		}
 		
-		fprintf(fp, "-smooth 1 -fill black -width 2\n");
+		fprintf(fp, "%g %g -smooth 1 -fill black -width 2\n", X(Vp), Y(Ip));
 		fprintf(fp, "text %g %g -anchor nw -text %g -fill black\n",
 				X(Vp)+2, Y((Ip > Imax) ? Imax : Ip)+2, Vg);
 	}
@@ -1365,6 +1411,239 @@ void plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, double 
 }
 
 
+/* Plot composite PP plate curves with Tk toolkit */
+void pp_plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, double Imax, double Vgm, double Vgs)
+{
+	int i; double Vp, Vg, Ip, t;
+	double Vbias = bias(m, V0, I0);
+	
+	/* Canvas layout: 720x576       */
+	/* Margins: l=40,r=40,t=40,b=20 */
+	#define X(V) (360.0 + 320.0*(V)/Vmax)
+	#define Y(I) (298.0 - 258.0*(I)/Imax)
+	
+	
+	/* Auto ranges */
+	if ((Vmax == 0.0) && data) {
+		for (i = 0; i < n; i++) if (data[0][i] > Vmax) Vmax = data[0][i]; Vmax -= V0;
+		t = 5.0 * pow(10.0, floor(log10(Vmax))-1); Vmax = t * ceil(Vmax/t);
+	}
+	
+	if ((Imax == 0.0) && data) {
+		for (i = 0; i < n; i++) if (data[3][i] > Imax) Imax = data[3][i]; Imax -= I0;
+		t = 5.0 * pow(10.0, floor(log10(Imax))-1); Imax = t * ceil(Imax/t);
+	}
+	
+	if ((Vgm == 0.0) && data) {
+		for (i = 0; i < n; i++) {
+			if (fabs(data[1][i]) > fabs(Vgm)) Vgm = data[1][i];
+			if ((Vgs == 0.0) && (data[1][i] != 0.0)) Vgs = data[1][i];
+		}
+		Vgm -= Vbias;
+	}
+	
+	if (Vgs == 0.0) { Vgs = -1.0; }
+	
+	
+	/* Axis grid */
+	fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline black -fill white -width 1\n",
+			X(-Vmax),Y(-Imax), X(Vmax),Y(-Imax), X(Vmax),Y(Imax), X(-Vmax),Y(Imax));
+	
+	for (i = 0; i <= 10; i++) {
+		fprintf(fp, "line %g %g %g %g -fill black -width 1 -dash .\n",
+				X(Vmax*(i-5)/5), Y(-Imax), X(Vmax*(i-5)/5), Y(Imax));
+		fprintf(fp, "line %g %g %g %g -fill black -width 1 -dash .\n",
+				X(-Vmax), Y(Imax*(i-5)/5), X(Vmax), Y(Imax*(i-5)/5));
+		fprintf(fp, "text %g %g -anchor e -text %g -fill black\n",
+				X(-Vmax)-5, Y(Imax*(i-5)/5), Imax*(i-5)/5);
+	}
+	
+	/* Plate curves */
+	if (m) for (Vg = - floor(fabs(Vgm/Vgs)) * Vgs; fabs(Vg) <= fabs(Vgm); Vg += Vgs) {
+		int class, cc = -1; double A;
+		static const char *color[] = {"black", "grey", "orange", "yellow"};
+		
+		fprintf(fp, "line ");
+		
+		for (Vp = -Vmax; Vp <= Vmax; Vp += Vmax/400) {
+			double V1[] = {V0+Vp, Vbias+Vg, V0+Vp}, Ip1 = (V0+Vp > 0) ? (*(m->curve))(m->p, V1) : 0.0,
+			       V2[] = {V0-Vp, Vbias-Vg, V0-Vp}, Ip2 = (V0-Vp > 0) ? (*(m->curve))(m->p, V2) : 0.0;
+			
+			Ip = Ip1 - Ip2; A = (Ip1 < Ip2) ? Ip1/Ip2 : Ip2/Ip1;
+			
+			if (Ip < -1.07*Imax) continue;
+			if (Ip > +1.07*Imax) break;
+			
+			class = ((A < 0.03) ? 0x02 : 0x00) |
+                                ((fabs(Vg) > -Vbias) ? 0x01 : 0x00);
+			
+			if ((cc != -1) && (class != cc))
+				fprintf(fp, "%g %g -smooth 1 -fill %s -width 2\nline ", X(Vp), Y(Ip), color[cc]);
+			
+			fprintf(fp, "%g %g ", X(Vp), Y(Ip)); cc = class;
+		}
+		
+		fprintf(fp, "%g %g -smooth 1 -fill %s -width 2\n", X(Vp), Y(Ip), color[cc]);
+		fprintf(fp, "text %g %g -anchor nw -text %+g -fill black\n",
+				X(Vp)+2, Y((Ip > Imax) ? Imax : Ip)+2, Vg);
+	}
+	
+	/* Power */
+	if (Pa > 0.0) {
+		fprintf(fp, "line ");
+		
+		for (Vp = V0-1000.0*Pa/(I0+Imax); Vp >= -Vmax; Vp -= Vmax/200) {
+			Ip = I0 - 1000.0*Pa/(V0-Vp);
+			fprintf(fp, "%g %g ", X(Vp), Y(Ip));
+		}
+		
+		fprintf(fp, "-smooth 1 -fill red -width 3\n");
+		
+		fprintf(fp, "line ");
+		
+		for (Vp = 1000.0*Pa/(I0+Imax)-V0; Vp <= Vmax; Vp += Vmax/200) {
+			Ip = 1000.0*Pa/(Vp+V0) - I0;
+			fprintf(fp, "%g %g ", X(Vp), Y(Ip));
+		}
+		
+		fprintf(fp, "-smooth 1 -fill red -width 3\n");
+		
+		fprintf(fp, "text %g %g -anchor s -text \"%g W\" -fill red\n",
+				X(0.95*Vmax), Y(Ip)-10, Pa);
+		fprintf(fp, "text %g %g -anchor n -text \"%g W\" -fill red\n",
+				X(-0.95*Vmax), Y(-Ip)+10, Pa);
+	}
+	
+	/* Loadline */
+	if (V0 > 0.0) {
+		double G = (RL != 0.0) ? 1000.0/RL : 0.0;
+		double V1 = Vmax, I1 = 2.0*V1*G;
+		
+		if (I1 > Imax) { I1 = Imax; V1 = Imax*RL/2000.0; }
+		
+		fprintf(fp, "line %g %g %g %g -fill blue -width 3\n",
+				X(-V1), Y(I1), X(V1), Y(-I1));
+		fprintf(fp, "text %g %g -anchor sw -text \"%g R\" -fill blue\n",
+				X(V1)+2, Y(-I1)-5, RL);
+		fprintf(fp, "oval %g %g %g %g -outline blue -width 2\n",
+				X(0)-5, Y(0)+5, X(0)+5, Y(0)-5);
+		fprintf(fp, "text %g %g -anchor ne -text %.3g -fill blue\n",
+				X(0)-5, Y(0)+5, Vbias);
+		
+		
+		if (Vout > 0.0) { Vin = fabs(pp_drive(m, Vout, Vbias, V0, RL)); }
+		
+		if (Vin > 0.0) {
+			V1 = pp_output(m, Vin, Vbias, V0, RL); I1 = 2.0*V1*G;
+			
+			fprintf(fp, "line %g %g %g %g -fill cyan -width 3 -arrow both\n",
+					X(-V1), Y(I1), X(V1), Y(-I1));
+		}
+		
+		
+		if (Vin > 0.0 && waveform) {
+			int N = 2*WAVE_PTS;
+			double *V = vector(N), *S = vector(N/2+1), *D = vector(N/2+1);
+			
+			fprintf(fp, "line %g %g %g %g -fill green -width 1 -dash -\n",
+					X(0), Y(-Imax), X(0), Y(Imax));
+			fprintf(fp, "line %g %g %g %g -fill green -width 1 -dash -\n",
+					X(-V1), Y(-Imax), X(-V1), Y(Imax));
+			fprintf(fp, "line %g %g %g %g -fill green -width 1 -dash -\n",
+					X(V1), Y(-Imax), X(V1), Y(Imax));
+			
+			fprintf(fp, "line ");
+			for (i = 0; i < N; i++) {
+				V[i] = pp_output(m, Vin*sin(2.0*M_PI*i/N), Vbias, V0, RL);
+				fprintf(fp, "%g %g ", X(V[i]), Y(-0.4*Imax + 0.4*Imax*(i-N/2)/N));
+			}
+			fprintf(fp, "-smooth 1 -fill green -width 2\n");
+			
+			#ifdef FFTW
+			distortion(V, S, D, N);
+			
+			fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline black -fill white -width 1\n",
+					X(0),Y(0.8*Imax), X(0.94*Vmax),Y(0.8*Imax), X(0.94*Vmax),Y(0), X(0),Y(0));
+			fprintf(fp, "text %g %g -anchor n -text \""
+					"THD: %.3g%%"
+					"\" -fill black -font {helvetica 8}\n",
+					X(0.47*Vmax), Y(0.8*Imax)+3,
+					100.0*sqrt(D[0]*D[0]+D[1]*D[1]+D[2]*D[2]));
+			
+			fprintf(fp, "text %g %g -anchor ne -text \"", X(0.9*Vmax), Y(0.7*Imax));
+			for (i = 1; i < 10; i += 2)
+				fprintf(fp, "%2i %11.6fV %11.6f%% %8.2fdb\\n", i,
+					sqrt(S[i]), 100.0*sqrt(S[i]/S[1]), 10.0*log10(S[i]/S[1]));
+			fprintf(fp, "\" -fill black -font {courier 6}\n");
+			
+			for (i = 3; i < 32; i += 2) {
+				double hdb = 20*log10(D[i]), hf = -120.0;
+				double x = 0.0 + 0.03*(i-1), y = 0.06 - ((hdb > hf) ? 0.70*(hdb-hf)/hf : 0.0);
+				
+				fprintf(fp, "line %g %g %g %g -fill yellow -width 14\n",
+						X(x*Vmax), Y(0.06*Imax), X(x*Vmax), Y(y*Imax));
+				fprintf(fp, "text %g %g -anchor n -justify center -text \"%i\" -fill black -font {helvetica 7}\n",
+						X(x*Vmax), Y(0.06*Imax)+2, i);
+				fprintf(fp, "text %g %g -anchor s -justify center -text \"%.3g\" -fill black -font {helvetica 6}\n",
+						X(x*Vmax), Y(y*Imax)-2, -hdb);
+			}
+			#endif /* FFTW */
+			
+			free_vector(V); free_vector(S); free_vector(D);
+		}
+		
+		/* Loadline summary */
+		fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline black -fill white -width 1\n",
+				X(0),Y(0.92*Imax), X(0.94*Vmax),Y(0.92*Imax), X(0.94*Vmax),Y(0.8*Imax), X(0),Y(0.8*Imax));
+		fprintf(fp, "text %g %g -anchor w -text \""
+				"Working point: %.3g V, %.3g mA\\n"
+				"Bias: %.3g V (Rk = %.4g)"
+				"\" -fill black -font {helvetica 8}\n",
+				X(0)+5, Y(0.86*Imax),
+				V0, I0, Vbias, fabs(Vbias/I0*1000.0));
+		
+		/* Signal summary */
+		if (Vin > 0.0) {
+			fprintf(fp, "text %g %g -anchor e -text \""
+					"Input: %.3g V\\n"
+					"Output: %.3g V (%.4g W)"
+					"\" -fill black -font {helvetica 8}\n",
+					X(0.94*Vmax)-5, Y(0.86*Imax),
+					Vin, fabs(V1), (RL != 0.0) ? 2.0*V1*V1/RL : 0.0);
+		}
+	}
+	
+	/* V axis annotation (cover-up) */
+	fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline white -fill white -width 1\n",
+			X(-Vmax),Y(-Imax)+1, X(Vmax),Y(-Imax)+1, X(Vmax),Y(-1.1*Imax), X(-Vmax),Y(-1.1*Imax));
+	for (i = 0; i <= 10; i++)
+		fprintf(fp, "text %g %g -anchor n -text %g -fill black\n",
+				X(Vmax*(i-5)/5), Y(-Imax)+5, Vmax*(i-5)/5);
+	
+	/* Push-Pull legend */
+	fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline black -fill white -width 1\n",
+			X(0),Y(-0.92*Imax), X(-0.94*Vmax),Y(-0.92*Imax), X(-0.94*Vmax),Y(-0.8*Imax), X(0),Y(-0.8*Imax));
+	fprintf(fp, "text %g %g -anchor c -text \""
+			"Push-Pull Composite"
+			"\" -fill black -font {helvetica 18 bold}\n",
+			X(-0.47*Vmax), Y(-0.86*Imax),
+			V0, I0, Vbias, fabs(Vbias/I0*1000.0));
+	
+	/* Annotation */
+	fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline black -fill white -width 1\n",
+			X(-Vmax),Y(Imax), X(Vmax),Y(Imax), X(Vmax),10.0, X(-Vmax),10.0);
+	fprintf(fp, "text %g %g -anchor w -text \"%s: mean fit error %g mA\\n%s(",
+			X(-Vmax)+3, (Y(Imax)+12.0)/2.0, m->name, sqrt(m->p[m->params]), m->macro);
+	for (i = 0; i < m->params; i++)
+		fprintf(fp, "%.10g%s", m->p[i], ((i < m->params-1) ? "," : ""));
+	fprintf(fp, ")\" -fill black\n");
+	
+	
+	#undef X
+	#undef Y
+}
+
+
 
 /**********************************************************************/
 
@@ -1463,7 +1742,7 @@ int main(int argc, char *argv[])
 	else { m = best_model((list_models ? stdout : NULL), d, n); }
 	
 	/* Produce requested output */
-	if (plot_curves) plate_curves(stdout, m, d, n, 0, 0, 0, 0);
+	if (plot_curves) pp_plate_curves(stdout, m, d, n, 0, 0, 0, 0);
 	
 	return 0;
 }
