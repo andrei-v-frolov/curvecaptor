@@ -1,4 +1,4 @@
-/* $Id: tubefit.c,v 1.7 2001/09/20 04:26:35 frolov Exp $ */
+/* $Id: tubefit.c,v 1.8 2001/09/22 04:08:17 frolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
@@ -578,7 +578,6 @@ static double triode_koren5(double p[], double V[])
 	return I;
 }
 
-
 /* Vacuum triode; modified Koren model (6 parameters) */
 static double init_koren6[] = {PRMREF(2,0), PRMREF(2,1), 0.0, PRMREF(2,2), 0.0, PRMREF(2,3)};
 static double triode_koren6(double p[], double V[])
@@ -587,7 +586,9 @@ static double triode_koren6(double p[], double V[])
 	double Vp = V[0], Vg = V[1];
 	double K = p[0], Kp = p[1], Kg = p[2], mu = p[3], nu = p[4], gamma = p[5];
 	
-	U = Vp * log(1.0 + exp(Kp + Kp*(mu+nu*Vg/1000.0)*Vg/Vp))/Kp + Kg*Vg;
+	//U = Vp * log(1.0 + exp(Kp + Kp*(mu+nu*Vg/1000.0)*Vg/Vp))/Kp + Kg*Vg;
+	U = Vp * log(1.0 + exp(Kp + Kp*mu*Vg/sqrt(nu*Vg + Vp*Vp)))/Kp + Kg*Vg;
+	// Also try nu*Vp... Better for most except 6SN7.
 	I = K * pow(uramp(U), gamma);
 	
 	return I;
@@ -725,12 +726,14 @@ model *best_model(double **data, int n)
 		
 		if (p[D] < min) { best = i; min = p[D]; }
 		
-		printf("* %s: mean fit error %g mA\n", m->name, sqrt(p[D]));
-		
-		printf("*   %s(", m->macro);
-		for (j = 0; j < D; j++)
-			printf("%.10g%s", p[j], ((j < D-1) ? "," : ""));
-		printf(")\n");
+		if (verbose) {
+			fprintf(stderr, "* %s: mean fit error %g mA\n", m->name, sqrt(p[D]));
+			
+			fprintf(stderr, "*   %s(", m->macro);
+			for (j = 0; j < D; j++)
+				fprintf(stderr, "%.10g%s", p[j], ((j < D-1) ? "," : ""));
+			fprintf(stderr, ")\n"); fflush(stderr);
+		}
 	}
 	
 	return &(mindex[best]);
@@ -918,13 +921,15 @@ void write_data(FILE *fp, double **m, int n)
 }
 
 
-/* */
+/* Plot plate curves with Tk toolkit */
 void plot_curves(FILE *fp, double **data, int n, model *m, double Vmax, double Imax, double Vgm, double Vgs)
 {
 	int i; double Vp, Vg, Ip;
 	
-	#define X(V) (40.0 + 560.0*(V)/Vmax)
-	#define Y(I) (460.0 - 440.0*(I)/Imax)
+	/* Canvas layout: 720x576       */
+	/* Margins: l=40,r=40,t=40,b=20 */
+	#define X(V) (40.0 + 640.0*(V)/Vmax)
+	#define Y(I) (556.0 - 516.0*(I)/Imax)
 	
 	
 	/* Auto ranges */
@@ -944,6 +949,8 @@ void plot_curves(FILE *fp, double **data, int n, model *m, double Vmax, double I
 			if ((Vgs == 0.0) && (data[1][i] != 0.0)) Vgs = data[1][i];
 		}
 	}
+	
+	if (Vgs == 0.0) { Vgs = -1.0; }
 	
 	
 	/* Axis grid */
@@ -982,8 +989,6 @@ void plot_curves(FILE *fp, double **data, int n, model *m, double Vmax, double I
 		}
 		
 		fprintf(fp, "-smooth 1 -fill black -width 2\n");
-		fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline white -fill white -width 1\n",
-				X(0),Y(Imax)-1, X(Vmax),Y(Imax)-1, X(Vmax),0.0, X(0),0.0);
 		fprintf(fp, "text %g %g -anchor nw -text %g -fill black\n",
 				X(Vp)+2, Y((Ip > Imax) ? Imax : Ip)+2, Vg);
 	}
@@ -1015,6 +1020,16 @@ void plot_curves(FILE *fp, double **data, int n, model *m, double Vmax, double I
 		fprintf(fp, "text %g %g -anchor sw -text \"%g R\" -fill blue\n",
 				X(V2)+2, Y(I2)-5, RL);
 	}
+	
+	/* Annotation */
+	fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline black -fill white -width 1\n",
+			X(0),Y(Imax), X(Vmax),Y(Imax), X(Vmax),10.0, X(0),10.0);
+	fprintf(fp, "text %g %g -anchor w -text \"%s: mean fit error %g mA\\n%s(",
+			X(0)+3, (Y(Imax)+12.0)/2.0, m->name, sqrt(m->p[m->params]), m->macro);
+	for (i = 0; i < m->params; i++)
+		fprintf(fp, "%.10g%s", m->p[i], ((i < m->params-1) ? "," : ""));
+	fprintf(fp, ")\" -fill black\n");
+	
 	
 	#undef X
 	#undef Y
@@ -1304,6 +1319,8 @@ int main(int argc, char *argv[])
 	}
 	
 	if (argc != optind) usage();
+	if (verbose) fprintf(stderr, "%s\n", usage_msg[0]);
+	
 	
 	/* Read data */
 	if (format) d = read_tagged_data(stdin, format, &n);
