@@ -1,4 +1,4 @@
-/* $Id: tubefit.c,v 1.6 2001/09/20 03:27:50 frolov Exp $ */
+/* $Id: tubefit.c,v 1.7 2001/09/20 04:26:35 frolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
@@ -579,6 +579,21 @@ static double triode_koren5(double p[], double V[])
 }
 
 
+/* Vacuum triode; modified Koren model (6 parameters) */
+static double init_koren6[] = {PRMREF(2,0), PRMREF(2,1), 0.0, PRMREF(2,2), 0.0, PRMREF(2,3)};
+static double triode_koren6(double p[], double V[])
+{
+	double I, U;
+	double Vp = V[0], Vg = V[1];
+	double K = p[0], Kp = p[1], Kg = p[2], mu = p[3], nu = p[4], gamma = p[5];
+	
+	U = Vp * log(1.0 + exp(Kp + Kp*(mu+nu*Vg/1000.0)*Vg/Vp))/Kp + Kg*Vg;
+	I = K * pow(uramp(U), gamma);
+	
+	return I;
+}
+
+
 /******************* Vacuum tube model index **************************/
 
 /* Tube model structure */
@@ -606,6 +621,7 @@ model mindex[] = {
 	{3, "Rydel model for grid current", "rydelg", 3, triode_rydel_grid},
 	{3, "Koren model (4 parameters)", "koren4", 4, triode_koren4, init_koren4},
 	{3, "Koren model (5 parameters)", "koren5", 5, triode_koren5, init_koren5},
+	{3, "Modified Koren model (6 parameters)", "koren6", 6, triode_koren6, init_koren6},
 };
 
 
