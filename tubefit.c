@@ -1,4 +1,4 @@
-/* $Id: tubefit.c,v 1.13 2002/02/12 01:48:33 frolov Exp $ */
+/* $Id: tubefit.c,v 1.14 2002/02/15 00:23:48 frolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
@@ -52,7 +52,8 @@ char *usage_msg[] = {
 	"  -f format	specify format for tagged input data",
 	"  -d		dump data in plain format for later use",
 	"  -m		[GUI] list available models and their fits",
-	"  -p		[GUI] produce plate curves plot",
+	"  -p circuit	[GUI] produce plate curves plot (SE or composite)",
+	"		(SE = single ended; PP = push-pull)",
 	"  -w		[GUI] do waveform analysis",
 	NULL
 };
@@ -1178,7 +1179,7 @@ double pp_drive(model *m, double Vp, double Vbias, double Vb, double R)
 
 
 
-/****************** Curves and waveforms ******************************/
+/****************** Distortion analysis *******************************/
 
 #ifdef FFTW
 
@@ -1211,6 +1212,9 @@ static void distortion(double *f, double *S, double *D, int N)
 }
 #endif /* FFTW */
 
+
+
+/****************** Curves and waveforms ******************************/
 
 /* Plot SE plate curves with Tk toolkit */
 void se_plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, double Imax, double Vgm, double Vgs)
@@ -1644,6 +1648,15 @@ void pp_plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, doub
 }
 
 
+/* Circuit index */
+static struct {char *name; void (*curves)(FILE *fp, model *m, double **data, int n, double Vmax, double Imax, double Vgm, double Vgs); } circuit[] = {
+	{"NONE", NULL},
+	{"SE",   se_plate_curves},
+	{"PP",   pp_plate_curves},
+	NULL
+};
+
+
 
 /**********************************************************************/
 
@@ -1653,7 +1666,7 @@ int main(int argc, char *argv[])
 	int n; double **d; model *m;
 	
 	/* Parse options */
-	while ((c = getopt(argc, argv, "hv2345P:L:I:O:f:dmpwC:M:")) != -1)
+	while ((c = getopt(argc, argv, "hv2345P:L:I:O:f:dmp:wC:M:")) != -1)
 	switch (c) {
 	/* General options */
 		case 'h':				/* Help message */
@@ -1702,7 +1715,15 @@ int main(int argc, char *argv[])
 		case 'm':				/* Models list */
 			list_models = 1; break;
 		case 'p':				/* Plot curves */
-			plot_curves = 1; break;
+			{
+				int i;
+				
+				for (i = 0; circuit[i].name; i++)
+					if (!strcmp(optarg, circuit[i].name)) plot_curves = i;
+				
+				if (!plot_curves) usage();
+			}
+			break;
 		case 'w':				/* Waveform analysis */
 			waveform = 1; break;
 	
@@ -1742,7 +1763,7 @@ int main(int argc, char *argv[])
 	else { m = best_model((list_models ? stdout : NULL), d, n); }
 	
 	/* Produce requested output */
-	if (plot_curves) pp_plate_curves(stdout, m, d, n, 0, 0, 0, 0);
+	if (plot_curves) (*(circuit[plot_curves].curves))(stdout, m, d, n, 0, 0, 0, 0);
 	
 	return 0;
 }
