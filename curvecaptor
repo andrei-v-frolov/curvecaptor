@@ -283,7 +283,6 @@ proc load_markers {c} {
 }
 
 
-
 set b .buttons; frame $b
 button $b.load -text "Load Markers" -command {load_markers $c}
 button $b.save -text "Save Markers" -command {save_markers $c}
@@ -299,7 +298,7 @@ proc curve_data {c} {
 	global backend type format
 	
 	set m [markers $c]; if {[llength $m] < 1} { return "" }
-	set d [exec -keepnewline $backend -$type -f"$format" -d << [join $m "\n"]]
+	set d [exec -keepnewline $backend -$type -f"$format" -d << [join $m "\n"] 2>@ stderr]
 }
 
 # Save curve data to a file
@@ -339,11 +338,50 @@ proc capture_data {c} {
 	set b $w.buttons; frame $b
 	button $b.load -text "Load Data" -command "load_data $t"
 	button $b.save -text "Save Data" -command "save_data $t"
-	button $b.model -text "Build Model" -command ""
+	button $b.model -text "Build Model" -command "model $t"
 	button $b.dismiss -text Dismiss -command "destroy $w"
 	pack $b.load $b.save $b.model $b.dismiss -side left -expand 1
 	
 	pack $b -side bottom -fill x -pady 2m
 	pack $s -side right -fill y
 	pack $t -expand yes -fill both
+}
+
+
+
+# Print canvas as a Postscript file
+proc print {c} {
+	set f [tk_getSaveFile -initialfile "|lpr"]
+	if {[set p [string first "|" $f]] != -1} { set f [string range $f $p end] }
+	
+	set fp [open $f w]; puts $fp [$c postscript -rotate 1]; close $fp
+}
+
+# Build models and inspect the fit
+proc model {t} {
+	global backend device type
+	
+	set w .model
+	catch {destroy $w}
+	toplevel $w
+	
+	wm title $w "Curve Captor -- $device model"
+	wm iconname $w "valve"
+	
+	set c $w.canvas
+	canvas $c -width 720 -height 576 -background white
+	$c create text 360 288 -anchor c -text "Fitting model parameters; please wait..." -fill black
+	pack $c -side top -padx .5m -pady .5m
+	
+	set b $w.buttons; frame $b
+	button $b.print -text Print -command "print $c"
+	button $b.dismiss -text Dismiss -command "destroy $w"
+	pack $b.print $b.dismiss -side left -expand 1
+	pack $b -side bottom -fill x -pady 2m
+	
+	update
+	
+	set p [exec $backend -v -$type << [$t get 0.0 end] 2>@ stderr]
+	foreach i [split $p "\n"] { eval "$c create $i" }
+	$c create text 675 26 -anchor e -font {courier 18 bold} -text "$device" -fill black
 }
