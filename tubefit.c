@@ -1,7 +1,7 @@
-/* $Id: tubefit.c,v 1.2 2001/09/06 22:31:37 frolov Exp $ */
+/* $Id: tubefit.c,v 1.3 2001/09/12 03:37:59 frolov Exp $ */
 
 /*
- * Curve Captor - vacuum tube model capture and builder tool
+ * Curve Captor - vacuum tube curve capture and model builder tool
  * Numerical backend - data fitting and approximation routines.
  * 
  * Copyright (C) 2001 Andrei Frolov <andrei@phys.ualberta.ca>
@@ -563,7 +563,7 @@ typedef struct {
 	char *macro;		/* Macro implementing Spice model */
 	int params;		/* # of model parameters to fit */
 	double (*curve)(double p[], double V[]);
-	double *guess;		/* Initial parameter values guess */
+	double *p;		/* Parameter values: initial guess/model fit */
 } model;
 
 /* Tube model index */
@@ -617,13 +617,13 @@ double *fit_curve(double **data, int n, model *m)
 	_data_ = data;
 	_model_ = m;
 	
-	for(i = 0; i < D; i++) p[i] = m->guess ? m->guess[i] : 0.0;
+	for(i = 0; i < D; i++) p[i] = m->p ? m->p[i] : 0.0;
 	
 	S = new_amoeba(p, D, chi2, 1.0); anneal(S, D, chi2, 1.0, 1000, 1.0e-6);
 	restart_amoeba(S, D, chi2, 0.3); anneal(S, D, chi2, 0.1, 1000, 1.0e-6);
 	restart_amoeba(S, D, chi2, 0.1); anneal(S, D, chi2, 0.0, 9999, 1.0e-6);
 	
-	for (i = 0; i <= D; i++) p[i] = S[D+1][i];
+	for (i = 0; i <= D; i++) p[i] = S[D+1][i]; m->p = p;
 	
 	free_matrix(S);
 	
@@ -638,18 +638,17 @@ void try_all_models(double **data, int n)
 	
 	for (i = 0; i < sizeof(mindex)/sizeof(model); i++) {
 		model *m = &(mindex[i]);
+		int D = m->params;
 		
 		if (m->dtype != dtype) continue;
 		else p = fit_curve(data, n, m);
 		
-		printf("* %s: mean fit error %g mA\n", m->name, sqrt(p[m->params]));
+		printf("* %s: mean fit error %g mA\n", m->name, sqrt(p[D]));
 		
-		printf("%s(", m->macro);
-		for (j = 0; j < m->params; j++)
-			printf("%.10g%s", p[j], ((j < m->params-1) ? "," : ""));
-		printf(")\n\n");
-		
-		free_vector(p);
+		printf("*   %s(", m->macro);
+		for (j = 0; j < D; j++)
+			printf("%.10g%s", p[j], ((j < D-1) ? "," : ""));
+		printf(")\n");
 	}
 }
 
@@ -725,7 +724,7 @@ double **read_tagged_data(FILE *fp, const char *format, int *pts)
 	
 	/* Read curve data */
 	while (getline(&buffer, &bsize, fp) != -1) {
-		if (*buffer == '#') continue;
+		if (*buffer == '#' || *buffer == '\n') continue;
 		if (*buffer == ';') break;
 		
 		for (i = 0; i < 3; i++) if (n[i] >= size[i]) {
@@ -736,8 +735,7 @@ double **read_tagged_data(FILE *fp, const char *format, int *pts)
 		if (sscanf(buffer, " %12[^ =]=%lf %lf %lf", l, &(t[0]), &(t[1]), &(t[2])) < 4)
 			error("syntax error in curve data");
 		
-		if ((i = pindex(format, l)) == -1)
-			error("Unknown curve parameter '%s'", l);
+		if ((i = pindex(format, l)) == -1) continue;
 		
 		if (!tag[i]) tag[i] = xstrdup(l);
 		
@@ -785,7 +783,7 @@ double **read_data(FILE *fp, int *pts)
 	
 	/* Read curve data */
 	while (getline(&buffer, &bsize, fp) != -1) {
-		if (*buffer == '#') continue;
+		if (*buffer == '#' || *buffer == '\n') continue;
 		if (*buffer == ';') break;
 		
 		if (n >= size) { m = grow_matrix(m, 4, size<<=1); }
@@ -838,6 +836,156 @@ void write_data(FILE *fp, double **m, int n)
 
 /**********************************************************************/
 
+double *fft256(double F[]);
+
+/* Find a root of f(x)=0 bracketed in interval [x1,x2] */
+double zbrent(double (*f)(double), double x1, double x2, double eps)
+{
+	int i;
+	double a = x1, b = x2, c = x2, d, e, min1, min2;
+	double fa = (*f)(a), fb = (*f)(b), fc = fb, p, q, r, s, tol, xm;
+	
+	#define ITMAX 100
+	#define EPS 3.0e-8
+	
+	if ((fa > 0.0 && fb > 0.0) || (fa < 0.0 && fb < 0.0))
+		error("Root must be bracketed in zbrent()");
+	
+	for (i = 0; i < ITMAX; i++) {
+		if ((fb > 0.0 && fc > 0.0) || (fb < 0.0 && fc < 0.0)) {
+			c = a; fc = fa; e = d = b-a;
+		}
+		if (fabs(fc) < fabs(fb)) {
+			a = b; fa = fb;
+			b = c; fb = fc;
+			c = a; fc = fa;
+		}
+		
+		tol = 2.0*EPS*fabs(b) + 0.5*eps; xm=0.5*(c-b);
+		
+		if (fabs(xm) <= tol || fb == 0.0) return b;
+		if (fabs(e) >= tol && fabs(fa) > fabs(fb)) {
+			s = fb/fa;
+			if (a == c) {
+				p = 2.0*xm*s;
+				q = 1.0-s;
+			} else {
+				q = fa/fc;
+				r = fb/fc;
+				p = s*(2.0*xm*q*(q-r)-(b-a)*(r-1.0));
+				q = (q-1.0)*(r-1.0)*(s-1.0);
+			}
+			
+			if (p > 0.0) q = -q; p = fabs(p);
+			
+			min1 = 3.0*xm*q - fabs(tol*q); min2 = fabs(e*q);
+			if (2.0*p < (min1 < min2 ? min1 : min2)) { e = d; d = p/q; }
+			else { d = xm; e = d; }
+		} else {
+			d = xm; e = d;
+		}
+		
+		a = b; fa = fb;
+		if (fabs(d) > tol) b += d;
+		else b += (xm > 0.0) ? fabs(tol) : -fabs(tol);
+		fb=(*f)(b);
+	}
+	
+	error("Maximum number of iterations exceeded in zbrent()");
+	
+	#undef ITMAX
+	#undef EPS
+	
+	return 0.0;
+}
+
+
+/* Working point is passed as global variable */
+static double _VI_[6]; /* Vp Vg Vs I (Vb 1/R) */
+
+
+/* Find grid bias for a given working point */
+static double _bias_(double Vg)
+{
+	_VI_[1] = Vg; return (*(_model_->curve))(_model_->p, _VI_) - _VI_[3];
+}
+
+double bias(model *m, double Vp, double Ip)
+{
+	_model_ = m; _VI_[0] = _VI_[2] = Vp; _VI_[3] = Ip;
+	
+	return zbrent(_bias_, -300, 100, 1.0e-6);
+}
+
+/* Find tube output on a given lloadline */
+static double _loadline_(double Vp)
+{
+	_VI_[0] = _VI_[2] = Vp; return (*(_model_->curve))(_model_->p, _VI_) - _VI_[3] + _VI_[5]*(Vp-_VI_[4]);
+}
+
+double output(model *m, double Vg, double Vb, double I0, double R)
+{
+	_model_ = m; _VI_[1] = Vg; _VI_[3] = I0;
+	_VI_[4] = Vb; _VI_[5] = (R != 0.0) ? 1.0/R : 0.0;
+	
+	return zbrent(_loadline_, 0, 1000, 1.0e-6);
+}
+
+
+/* Return the square amplitude of j-th harmonic */
+static double harmonic(double *H, int j)
+{
+	int i = j<<1; double hj = H[i]*H[i] + H[i+1]*H[i+1];
+	
+	if (j) { i = (256-j)<<1; hj += H[i]*H[i] + H[i+1]*H[i+1]; hj *= 2.0; }
+	
+	return hj;
+}
+
+/* Analyze distortion spectrum for a loadline */
+void distortion(model *m, double Vin, double Vb, double I0, double R)
+{
+	int i;
+	double Vg, *Vp = vector(256);
+	double Vbias = bias(m, Vb, I0);
+	double *H, A, H2, He = 0.0, Ho = 0.0;
+	
+	for (i = 0; i < 256; i++) {
+		Vg = Vbias + Vin*sin(M_PI*i/128.0);
+		Vp[i] = output(m, Vg, Vb, I0, R);
+	}
+	
+	H = fft256(Vp);
+	A = sqrt(harmonic(H, 1));
+	H2 = sqrt(harmonic(H, 2))/A;
+	
+	for (i = 128; i > 2; i--) {
+		if (i%2) Ho += harmonic(H, i);
+		else He += harmonic(H, i);
+	}
+	He = sqrt(He)/A; Ho = sqrt(Ho)/A;
+	
+	printf("%g %g %g %g    ", A, H2*100.0, He*100.0, Ho*100.0);
+	for (i = 0; i < 10; i++) printf("%g ", sqrt(harmonic(H, i)));
+	printf("\n");
+	
+	free_vector(H);
+}
+
+/* Tune loadline */
+void loadtune(model *m, double Vin, double Vb, double I0)
+{
+	double R;
+	
+	for (R = 0.01; R < 30.0; R *= pow(10.0, 0.1)) {
+		printf("%g    ", R); distortion(m, Vin, Vb, I0, R);
+	}
+}
+
+
+
+/**********************************************************************/
+
 int main(int argc, char *argv[])
 {
 	char c;
@@ -882,5 +1030,8 @@ int main(int argc, char *argv[])
 	/* Do model fit */
 	try_all_models(d, n);
 	
+	//printf("%g\n", bias(mindex+9, 150.0, 100.0));
+	//printf("%g\n", output(mindex+9, -0.0, 150.0, 30.0, 1.714));
+	loadtune(mindex+9, 50.0, 125.0, 100.0);
 	return 0;
 }
