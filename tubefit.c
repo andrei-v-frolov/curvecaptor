@@ -1,4 +1,4 @@
-/* $Id: tubefit.c,v 1.8 2001/09/22 04:08:17 frolov Exp $ */
+/* $Id: tubefit.c,v 1.9 2001/09/23 05:40:34 frolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
@@ -39,14 +39,19 @@ char *usage_msg[] = {
 	"  -[2|3|4|5]	valve type (2=diode, 3=triode, etc)",
 	"  -P Pa	rated anode dissipation power",
 	"  -L Vp,Ip[,R]	loadline: working point and load resistance",
+	"  -[I|O] V	specify input/output AC signal amplitude",
 	"",
 	" Model fit options:",
 	"  -C flags	apply cuts to tube data to fit specific requirements",
 	"		(g = negative grid; p = rated power; l = loadline)",
+	"  -M model	use user-supplied model instead of finding best fitting one",
 	"",
 	" I/O functions:",
 	"  -f format	specify format for tagged input data",
 	"  -d		dump data in plain format for later use",
+	"  -m		[GUI] list available models and their fits",
+	"  -p		[GUI] produce plate curves plot",
+	"  -w		[GUI] do waveform analysis",
 	NULL
 };
 
@@ -59,13 +64,20 @@ static double                Pa = 0.0;
 static double                V0 = 0.0;
 static double                I0 = 0.0;
 static double                RL = 0.0;
+static double               Vin = 0.0;
+static double              Vout = 0.0;
 
 static char             *format = NULL;
 static int          output_only = 0;
+static int          list_models = 0;
+static int          plot_curves = 0;
+static int             waveform = 0;
 
 static int             grid_cut = 0;
 static int            power_cut = 0;
 static int         loadline_cut = 0;
+
+static char         *user_model = NULL;
 
 
 
@@ -433,6 +445,7 @@ void anneal(double **S, int n, double (*func)(double []), double T0, int maxstep
 }
 
 
+
 /******************* Vacuum tube models *******************************/
 
 /* A way to refer to previous model's parameters */
@@ -651,18 +664,13 @@ static double chi2(double p[])
 	return s/norm;
 }
 
-/* Fit parametric curve model to the data using simulated annealing */
-double *fit_curve(double **data, int n, model *m)
+/* Initialize global fit context */
+static void init_fit_context(model *m, double **data, int n)
 {
-	int i, j, k, D = m->params;
-	double *w = vector(n), *p = vector(D+1), **S;
+	int i;
+	double *w = vector(n);
 	
-	_pts_ = n;
-	_data_ = data;
-	_weight_ = w;
-	_model_ = m;
-	
-	/* initialize point weights */
+	/* point weights */
 	for (i = 0; i < n; i++) {
 		w[i] = 1.0;
 		
@@ -688,6 +696,20 @@ double *fit_curve(double **data, int n, model *m)
 		}
 	}
 	
+	_pts_ = n;
+	_data_ = data;
+	_weight_ = w;
+	_model_ = m;
+}
+
+/* Fit parametric curve model to the data using simulated annealing */
+double *fit_curve(model *m, double **data, int n)
+{
+	int i, j, k, D = m->params;
+	double *p = vector(D+1), **S;
+	
+	init_fit_context(m, data, n);
+	
 	/* initialize parameter vector */
 	for (i = 0; i < D; i++) {
 		if (!m->p) { p[i] = 0.0; continue; }
@@ -705,26 +727,28 @@ double *fit_curve(double **data, int n, model *m)
 	
 	for (i = 0; i <= D; i++) p[i] = S[D+1][i]; m->p = p;
 	
-	free_vector(w);
+	free_vector(_weight_);
 	free_matrix(S);
 	
 	return p;
 }
 
+
 /* Try all appropriate models and return the best one */
-model *best_model(double **data, int n)
+model *best_model(FILE *fp, double **data, int n)
 {
-	int i, j, best = 0;
 	double *p, min = HUGE;
+	int i, j, k, best = 0, invoke = 0;
 	
-	for (i = 0; i < sizeof(mindex)/sizeof(model); i++) {
+	for (i = 0, k = 0; i < sizeof(mindex)/sizeof(model); i++) {
 		model *m = &(mindex[i]);
 		int D = m->params;
 		
 		if (m->vtype != vtype) continue;
-		else p = fit_curve(data, n, m);
+		else p = fit_curve(m, data, n);
+		if (p[D] == HUGE) continue;
 		
-		if (p[D] < min) { best = i; min = p[D]; }
+		if (p[D] < min) { min = p[D]; best = i; invoke = k; }
 		
 		if (verbose) {
 			fprintf(stderr, "* %s: mean fit error %g mA\n", m->name, sqrt(p[D]));
@@ -734,9 +758,56 @@ model *best_model(double **data, int n)
 				fprintf(stderr, "%.10g%s", p[j], ((j < D-1) ? "," : ""));
 			fprintf(stderr, ")\n"); fflush(stderr);
 		}
+		
+		if (fp) {
+			fprintf(fp, "add command -label \"%s \\[mean fit error %g mA\\]\"", m->name, sqrt(p[D]));
+			
+			fprintf(fp, " -command { set macro \"%s\"; set mparams \"", m->macro);
+			for (j = 0; j < D; j++)
+				fprintf(fp, "%.10g%s", p[j], ((j < D-1) ? "," : ""));
+			fprintf(fp, "\" }\n");
+		}
+		
+		k++;
 	}
 	
+	if (fp) fprintf(fp, "invoke %i\n", invoke);
+	
 	return &(mindex[best]);
+}
+
+/* Read model specification from a string */
+model *read_model(const char *s, double **data, int n)
+{
+	int i, j, idx;
+	char *macro = xstrdup(s), *p = strchr(macro, '('), *q;
+	
+	if (!p) error("Invalid model specification '%s'", s); *(p++) = 0;
+	
+	for (i = 0, idx = -1; i < sizeof(mindex)/sizeof(model); i++) {
+		model *m = &(mindex[i]);
+		int D = m->params;
+		
+		if (strcmp(macro, m->macro)) continue; else idx = i;
+		
+		m->p = vector(D+1);
+		for (j = 0; j < D; j++) {
+			m->p[j] = strtod(p, &q);
+			if ((p == q) || (*q && (*q != ')') && (*(q++) != ',')))
+				error("Error parsing model parameter '%s'", p);
+			p = q;
+		}
+		
+		init_fit_context(m, data, n);
+		m->p[D] = chi2(m->p);
+		free_vector(_weight_);
+		
+		break;
+	}
+	
+	if (idx == -1) error("Model '%s' not found", macro);
+	
+	return &(mindex[idx]);
 }
 
 
@@ -921,121 +992,6 @@ void write_data(FILE *fp, double **m, int n)
 }
 
 
-/* Plot plate curves with Tk toolkit */
-void plot_curves(FILE *fp, double **data, int n, model *m, double Vmax, double Imax, double Vgm, double Vgs)
-{
-	int i; double Vp, Vg, Ip;
-	
-	/* Canvas layout: 720x576       */
-	/* Margins: l=40,r=40,t=40,b=20 */
-	#define X(V) (40.0 + 640.0*(V)/Vmax)
-	#define Y(I) (556.0 - 516.0*(I)/Imax)
-	
-	
-	/* Auto ranges */
-	if ((Vmax == 0.0) && data) {
-		for (i = 0; i < n; i++) if (data[0][i] > Vmax) Vmax = data[0][i];
-		i = 5.0 * pow(10.0, floor(log10(Vmax))-1); Vmax = i * ceil(Vmax/i);
-	}
-	
-	if ((Imax == 0.0) && data) {
-		for (i = 0; i < n; i++) if (data[3][i] > Imax) Imax = data[3][i];
-		i = 5.0 * pow(10.0, floor(log10(Imax))-1); Imax = i * ceil(Imax/i);
-	}
-	
-	if ((Vgm == 0.0) && data) {
-		for (i = 0; i < n; i++) {
-			if (fabs(data[1][i]) > fabs(Vgm)) Vgm = data[1][i];
-			if ((Vgs == 0.0) && (data[1][i] != 0.0)) Vgs = data[1][i];
-		}
-	}
-	
-	if (Vgs == 0.0) { Vgs = -1.0; }
-	
-	
-	/* Axis grid */
-	fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline black -fill white -width 1\n",
-			X(0),Y(0), X(Vmax),Y(0), X(Vmax),Y(Imax), X(0),Y(Imax));
-	
-	for (i = 0; i <= 10; i++) {
-		fprintf(fp, "line %g %g %g %g -fill black -width 1 -dash .\n",
-				X(Vmax*i/10), Y(0), X(Vmax*i/10), Y(Imax));
-		fprintf(fp, "text %g %g -anchor n -text %g -fill black\n",
-				X(Vmax*i/10), Y(0)+5, Vmax*i/10);
-		fprintf(fp, "line %g %g %g %g -fill black -width 1 -dash .\n",
-				X(0), Y(Imax*i/10), X(Vmax), Y(Imax*i/10));
-		fprintf(fp, "text %g %g -anchor e -text %g -fill black\n",
-				X(0)-5, Y(Imax*i/10), Imax*i/10);
-	}
-	
-	/* Data points */
-	if (data) for (i = 0; i < n; i++) {
-		Vp = data[0][i]; Vg = data[1][i]; Ip = data[3][i];
-		
-		if (fabs(Vg/Vgs - rint(Vg/Vgs)) < 1.0e-4)
-			fprintf(fp, "oval %g %g %g %g -outline black -width 1\n",
-					X(Vp)-1, Y(Ip)+1, X(Vp)+2, Y(Ip)-2);
-	}
-	
-	/* Plate curves */
-	if (m) for (Vg = 0.0; fabs(Vg) <= fabs(Vgm); Vg += Vgs) {
-		fprintf(fp, "line ");
-		
-		for (Vp = 0.0, Ip = 0.0; (Vp <= Vmax) && (Ip <= Imax); Vp += Vmax/200) {
-			double V[] = {Vp, Vg, Vp};
-			
-			Ip = (*(m->curve))(m->p, V);
-			fprintf(fp, "%g %g ", X(Vp), Y(Ip));
-		}
-		
-		fprintf(fp, "-smooth 1 -fill black -width 2\n");
-		fprintf(fp, "text %g %g -anchor nw -text %g -fill black\n",
-				X(Vp)+2, Y((Ip > Imax) ? Imax : Ip)+2, Vg);
-	}
-	
-	/* Power */
-	if (Pa > 0.0) {
-		fprintf(fp, "line ");
-		
-		for (Vp = 1000.0*Pa/Imax; Vp <= Vmax; Vp += Vmax/200)
-			fprintf(fp, "%g %g ", X(Vp), Y(1000.0*Pa/Vp));
-		
-		fprintf(fp, "-smooth 1 -fill red -width 3\n");
-		fprintf(fp, "text %g %g -anchor s -text \"%g W\" -fill red\n",
-				X(0.95*Vmax), Y(1053.0*Pa/Vmax)-5, Pa);
-	}
-	
-	/* Loadline */
-	if (V0 > 0.0) {
-		double G = (RL != 0.0) ? 1000.0/RL : 0.0;
-		double V1 = 0.0, I1 = I0+G*V0, V2 = Vmax, I2 = I0+G*(V0-Vmax);
-		
-		if ((I1 > Imax) && (G != 0.0)) { I1 = Imax; V1 = V0 - (Imax-I0)/G; }
-		if ((I2 < 0.0) && (G != 0.0)) { I2 = 0.0; V2 = V0 + I0/G; }
-		
-		fprintf(fp, "line ");
-		fprintf(fp, "%g %g %g %g ", X(V1), Y(I1), X(V2), Y(I2));
-		fprintf(fp, "-fill blue -width 3\n");
-		
-		fprintf(fp, "text %g %g -anchor sw -text \"%g R\" -fill blue\n",
-				X(V2)+2, Y(I2)-5, RL);
-	}
-	
-	/* Annotation */
-	fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline black -fill white -width 1\n",
-			X(0),Y(Imax), X(Vmax),Y(Imax), X(Vmax),10.0, X(0),10.0);
-	fprintf(fp, "text %g %g -anchor w -text \"%s: mean fit error %g mA\\n%s(",
-			X(0)+3, (Y(Imax)+12.0)/2.0, m->name, sqrt(m->p[m->params]), m->macro);
-	for (i = 0; i < m->params; i++)
-		fprintf(fp, "%.10g%s", m->p[i], ((i < m->params-1) ? "," : ""));
-	fprintf(fp, ")\" -fill black\n");
-	
-	
-	#undef X
-	#undef Y
-}
-
-
 
 /****************** Bias and loadlines ********************************/
 
@@ -1048,6 +1004,8 @@ double zbrent(double (*f)(double), double x1, double x2, double eps)
 	
 	#define ITMAX 100
 	#define EPS 3.0e-8
+	
+	fprintf(stderr, "%g %g  -  %g %g\n", a, fa, b, fb);
 	
 	if ((fa > 0.0 && fb > 0.0) || (fa < 0.0 && fb < 0.0))
 		error("Root must be bracketed in zbrent()");
@@ -1250,13 +1208,143 @@ void powertune(model *m, double P, double kpd)
 
 /**********************************************************************/
 
+/* Plot plate curves with Tk toolkit */
+void plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, double Imax, double Vgm, double Vgs)
+{
+	int i; double Vp, Vg, Ip;
+	
+	/* Canvas layout: 720x576       */
+	/* Margins: l=40,r=40,t=40,b=20 */
+	#define X(V) (40.0 + 640.0*(V)/Vmax)
+	#define Y(I) (556.0 - 516.0*(I)/Imax)
+	
+	
+	/* Auto ranges */
+	if ((Vmax == 0.0) && data) {
+		for (i = 0; i < n; i++) if (data[0][i] > Vmax) Vmax = data[0][i];
+		i = 5.0 * pow(10.0, floor(log10(Vmax))-1); Vmax = i * ceil(Vmax/i);
+	}
+	
+	if ((Imax == 0.0) && data) {
+		for (i = 0; i < n; i++) if (data[3][i] > Imax) Imax = data[3][i];
+		i = 5.0 * pow(10.0, floor(log10(Imax))-1); Imax = i * ceil(Imax/i);
+	}
+	
+	if ((Vgm == 0.0) && data) {
+		for (i = 0; i < n; i++) {
+			if (fabs(data[1][i]) > fabs(Vgm)) Vgm = data[1][i];
+			if ((Vgs == 0.0) && (data[1][i] != 0.0)) Vgs = data[1][i];
+		}
+	}
+	
+	if (Vgs == 0.0) { Vgs = -1.0; }
+	
+	
+	/* Axis grid */
+	fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline black -fill white -width 1\n",
+			X(0),Y(0), X(Vmax),Y(0), X(Vmax),Y(Imax), X(0),Y(Imax));
+	
+	for (i = 0; i <= 10; i++) {
+		fprintf(fp, "line %g %g %g %g -fill black -width 1 -dash .\n",
+				X(Vmax*i/10), Y(0), X(Vmax*i/10), Y(Imax));
+		fprintf(fp, "text %g %g -anchor n -text %g -fill black\n",
+				X(Vmax*i/10), Y(0)+5, Vmax*i/10);
+		fprintf(fp, "line %g %g %g %g -fill black -width 1 -dash .\n",
+				X(0), Y(Imax*i/10), X(Vmax), Y(Imax*i/10));
+		fprintf(fp, "text %g %g -anchor e -text %g -fill black\n",
+				X(0)-5, Y(Imax*i/10), Imax*i/10);
+	}
+	
+	/* Data points */
+	if (data) for (i = 0; i < n; i++) {
+		Vp = data[0][i]; Vg = data[1][i]; Ip = data[3][i];
+		
+		if (fabs(Vg/Vgs - rint(Vg/Vgs)) < 1.0e-4)
+			fprintf(fp, "oval %g %g %g %g -outline black -width 1\n",
+					X(Vp)-2, Y(Ip)+2, X(Vp)+2, Y(Ip)-2);
+	}
+	
+	/* Plate curves */
+	if (m) for (Vg = 0.0; fabs(Vg) <= fabs(Vgm); Vg += Vgs) {
+		fprintf(fp, "line ");
+		
+		for (Vp = 0.0, Ip = 0.0; (Vp <= Vmax) && (Ip <= Imax); Vp += Vmax/200) {
+			double V[] = {Vp, Vg, Vp};
+			
+			Ip = (*(m->curve))(m->p, V);
+			fprintf(fp, "%g %g ", X(Vp), Y(Ip));
+		}
+		
+		fprintf(fp, "-smooth 1 -fill black -width 2\n");
+		fprintf(fp, "text %g %g -anchor nw -text %g -fill black\n",
+				X(Vp)+2, Y((Ip > Imax) ? Imax : Ip)+2, Vg);
+	}
+	
+	/* Power */
+	if (Pa > 0.0) {
+		fprintf(fp, "line ");
+		
+		for (Vp = 1000.0*Pa/Imax; Vp <= Vmax; Vp += Vmax/200)
+			fprintf(fp, "%g %g ", X(Vp), Y(1000.0*Pa/Vp));
+		
+		fprintf(fp, "-smooth 1 -fill red -width 3\n");
+		fprintf(fp, "text %g %g -anchor s -text \"%g W\" -fill red\n",
+				X(0.95*Vmax), Y(1053.0*Pa/Vmax)-5, Pa);
+	}
+	
+	/* Loadline */
+	if (V0 > 0.0) {
+		double Vbias = bias(m, V0, I0);
+		double G = (RL != 0.0) ? 1000.0/RL : 0.0;
+		double V1 = 0.0, I1 = I0+G*V0, V2 = Vmax, I2 = I0+G*(V0-Vmax);
+		
+		if ((I1 > Imax) && (G != 0.0)) { I1 = Imax; V1 = V0 - (Imax-I0)/G; }
+		if ((I2 < 0.0) && (G != 0.0)) { I2 = 0.0; V2 = V0 + I0/G; }
+		
+		fprintf(fp, "line %g %g %g %g -fill blue -width 3\n",
+				X(V1), Y(I1), X(V2), Y(I2));
+		fprintf(fp, "text %g %g -anchor sw -text \"%g R\" -fill blue\n",
+				X(V2)+2, Y(I2)-5, RL);
+		fprintf(fp, "oval %g %g %g %g -outline blue -width 2\n",
+				X(V0)-5, Y(I0)+5, X(V0)+5, Y(I0)-5);
+		fprintf(fp, "text %g %g -anchor ne -text %.3g -fill blue\n",
+				X(V0)-5, Y(I0)+5, Vbias);
+		
+		if (Vout > 0.0) { Vin = drive(m, Vout, V0, I0, RL); }
+		if (Vin > 0.0) {
+			V1 = output(m, Vbias+Vin, V0, I0, RL); I1 = I0+G*(V0-V1);
+			V2 = output(m, Vbias-Vin, V0, I0, RL); I2 = I0+G*(V0-V2);
+			
+			fprintf(fp, "line %g %g %g %g -fill cyan -width 3 -arrow both\n",
+					X(V1), Y(I1), X(V2), Y(I2));
+		}
+	}
+	
+	/* Annotation */
+	fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline black -fill white -width 1\n",
+			X(0),Y(Imax), X(Vmax),Y(Imax), X(Vmax),10.0, X(0),10.0);
+	fprintf(fp, "text %g %g -anchor w -text \"%s: mean fit error %g mA\\n%s(",
+			X(0)+3, (Y(Imax)+12.0)/2.0, m->name, sqrt(m->p[m->params]), m->macro);
+	for (i = 0; i < m->params; i++)
+		fprintf(fp, "%.10g%s", m->p[i], ((i < m->params-1) ? "," : ""));
+	fprintf(fp, ")\" -fill black\n");
+	
+	
+	#undef X
+	#undef Y
+}
+
+
+
+/**********************************************************************/
+
 int main(int argc, char *argv[])
 {
 	char c;
-	int n; double **d;
+	int n; double **d; model *m;
 	
 	/* Parse options */
-	while ((c = getopt(argc, argv, "hv2345P:L:f:dC:")) != -1)
+	while ((c = getopt(argc, argv, "hv2345P:L:I:O:f:dmpwC:M:")) != -1)
 	switch (c) {
 	/* General options */
 		case 'h':				/* Help message */
@@ -1292,12 +1380,22 @@ int main(int argc, char *argv[])
 				}
 			}
 			break;
+		case 'I':				/* Drive voltage */
+			Vin = strtod(optarg, NULL); break;
+		case 'O':				/* Swing voltage */
+			Vout = strtod(optarg, NULL); break;
 	
 	/* I/O functions */
 		case 'f':				/* Tagged data format */
 			format = optarg; break;
 		case 'd':				/* Output data only */
 			output_only = 1; break;
+		case 'm':				/* Models list */
+			list_models = 1; break;
+		case 'p':				/* Plot curves */
+			plot_curves = 1; break;
+		case 'w':				/* Waveform analysis */
+			waveform = 1; break;
 	
 	/* Model fit options */
 		case 'C':				/* Data cuts */
@@ -1312,6 +1410,8 @@ int main(int argc, char *argv[])
 					usage();
 			}
 			break;
+		case 'M':				/* User model */
+			user_model = optarg; break;
 	
 	/* Default response */
 		default:
@@ -1328,12 +1428,12 @@ int main(int argc, char *argv[])
 	
 	if (output_only) { write_data(stdout, d, n); exit(0); }
 	
-	/* Do model fit */
-	//best_model(d, n);
+	/* Build model */
+	if (user_model) { m = read_model(user_model, d, n); }
+	else { m = best_model((list_models ? stdout : NULL), d, n); }
 	
-	//fit_curve(d, n, mindex+3);
-	//plot_curves(stdout, d, n, mindex+3, 0, 0, 0, 0);
-	plot_curves(stdout, d, n, best_model(d, n), 0, 0, 0, 0);
+	/* Produce requested output */
+	if (plot_curves) plate_curves(stdout, m, d, n, 0, 0, 0, 0);
 	
 	//printf("%g\n", bias(mindex+9, 125.0, 100.0));
 	//printf("%g\n", output(mindex+9, -0.0, 150.0, 30.0, 1.714));
