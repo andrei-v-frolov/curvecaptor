@@ -1,4 +1,4 @@
-/* $Id: tubefit.c,v 1.17 2005/04/22 06:56:29 afrolov Exp $ */
+/* $Id: tubefit.c,v 1.18 2005/04/22 08:41:13 afrolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
@@ -286,20 +286,6 @@ void free_matrix(double **m)
 }
 
 
-/* create an nxn identity matrix */
-double **identm(unsigned long n)
-{
-	register unsigned long i, j;
-	register double **m = matrix(n, n);
-	
-	for (i = 0; i < n; i++) {
-		for (j = 0; j < n; j++) m[i][j] = 0.0; m[i][i] = 1.0;
-	}
-	
-	return m;
-}
-
-
 
 /**********************************************************************/
 
@@ -432,6 +418,8 @@ double mmin(double p[], double **e, int n, double (*f)(double []), double eps)
 #define PRIOR_MAGIC 0x00505259
 #define PRMREF(m,k) ((((PRIOR_MAGIC<<4) + (m))<<4) + k)
 #define PRIOR(k) PRMREF(1,k)
+
+#define MAGIC(v) (((int)(v) >> 8) == PRIOR_MAGIC)
 
 
 /* uramp() like in Spice 3f4 */
@@ -686,19 +674,24 @@ static void init_fit_context(model *m, double **data, int n)
 double *fit_curve(model *m, double **data, int n)
 {
 	int i, j, k, D = m->params;
-	double *p = vector(D+1), **e = identm(D);
+	double *p = vector(D+1), **e = matrix(D,D);
 	
 	init_fit_context(m, data, n);
 	
 	/* initialize parameter vector */
 	for (i = 0; i < D; i++) {
 		if (!m->p) { p[i] = 0.0; continue; }
-		if (((int)(m->p[i]) >> 8) != PRIOR_MAGIC) { p[i] = m->p[i]; continue; }
+		if (!MAGIC(m->p[i])) { p[i] = m->p[i]; continue; }
 		
 		j = ((int)(m->p[i]) & 0xF0) >> 4;
 		k = (int)(m->p[i]) & 0x0F;
 		p[i] = (m-j)->p[k];
 	}
+	
+	/* initialize direction set to try new directions first */
+	for (i = 0; i < D; i++) for (j = 0; j < D; j++) e[i][j] = 0.0; j = 0;
+	for (i = 0; i < D; i++) if (!m->p || !MAGIC(m->p[i])) e[i][j++] = 1.0;
+	for (i = 0; i < D; i++) if ( m->p &&  MAGIC(m->p[i])) e[i][j++] = 1.0;
 	
 	/* optimize */
 	p[D] = mmin(p, e, D, chi2, 1.0e-6); m->p = p;
