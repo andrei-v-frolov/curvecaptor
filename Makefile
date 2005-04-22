@@ -1,5 +1,5 @@
 ################################################################
-# $Id: Makefile,v 1.2 2002/03/02 07:26:16 frolov Exp $
+# $Id: Makefile,v 1.3 2005/04/22 06:50:03 afrolov Exp $
 # Makefile for Curve Captor source code
 ################################################################
 
@@ -38,11 +38,11 @@ FFTLIBS = -L$(HOME)/local/lib -lrfftw -lfftw
 
 # Compiler flags
 ifdef DEBUG
-CFLAGS	= -m486 -g -pg -Wall
+CFLAGS	= -g -pg -Wall
 DEFINES	= -DDEBUG -DVERSION='"$(VERSION) (debugging on)"' -DDATADIR='"$(DATADIR)"'
 LDFLAGS	= -pg
 else
-CFLAGS	= -m486 -O6 -fomit-frame-pointer -funroll-loops
+CFLAGS	= -O3 -march=pentium4
 DEFINES	= -DVERSION='"$(VERSION)"' -DDATADIR='"$(DATADIR)"'
 LDFLAGS	=
 endif

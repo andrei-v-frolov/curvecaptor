@@ -1,4 +1,4 @@
-/* $Id: tubefit.c,v 1.15 2002/03/03 03:45:21 frolov Exp $ */
+/* $Id: tubefit.c,v 1.16 2005/04/22 06:50:03 afrolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
@@ -286,6 +286,20 @@ void free_matrix(double **m)
 }
 
 
+/* create an nxn identity matrix */
+double **identm(unsigned long n)
+{
+	register unsigned long i, j;
+	register double **m = matrix(n, n);
+	
+	for (i = 0; i < n; i++) {
+		for (j = 0; j < n; j++) m[i][j] = 0.0; m[i][i] = 1.0;
+	}
+	
+	return m;
+}
+
+
 
 /**********************************************************************/
 
@@ -300,151 +314,114 @@ void free_matrix(double **m)
  */
 
 
-/******************* Simulated annealing ******************************/
+/******************* Multidimensional minimization ********************/
 
-/* n-dimensional amoeba matrix layout:
- *
- *                    |   [0..n-1]   |  [n]  
- *             -------+--------------+-------
- *             [0..n] |simplex coords| f(x)  
- *             -------+--------------+-------
- *  S[i][j] =   [n+1] |best pt coords| f(b)  
- *              [n+2] |vertex sum    |   0   
- *              [n+3] |tmp           |   .   
- *             -------+--------------+-------
- */
-
-/* Restart amoeba around best point */
-void restart_amoeba(double **S, int n, double (*func)(double []), double lambda)
+/* directional minimization along a vector xi in n dimensions */
+double vmin(double p[], double xi[], int n, double (*f)(double []), double eps)
 {
-	int i, j;
-	double *best = S[n+1], *sum = S[n+2];
+	double a, b, c, u, v, w, x, fa, fb, fc, fu, fv, fw, fx;
+	double q, r, s, t, tol, e = 0.0, d = 0.0;
 	
-	for (i = 0; i <= n; i++)
-		for (j = 0; j <= n; j++)
-			S[i][j] = best[j];
+	int i, maxiter = 84; // maximal number of iterations
 	
-	for (i = 0; i < n; i++) {
-		S[i][i] += lambda;
-		S[i][n] = (*func)(S[i]);
+	#define GOLD  1.61803398874989484820458683436563811772030918
+	#define CGOLD 0.38196601125010515179541316563436188227969082
+	
+	#define EVAL(X,F) { double t[n]; for (i = 0; i < n; i++) t[i] = p[i] + (X)*xi[i]; (F) = (*f)(t); }
+	#define SWAP(A,B) { double T = (A); (A) = (B); (B) = T; } 
+	#define SIGN(A,B) ((B) >= 0.0 ? fabs(A) : -fabs(A))
+	
+	/* initial bracketing of a minimum */
+	a = 0.0; b = 1.0; EVAL(a,fa); EVAL(b,fb);
+	if (fb > fa) { SWAP(a,b); SWAP(fa,fb); }
+	c = b + GOLD*(b-a); EVAL(c,fc);
+	
+	while (fb > fc) {
+		a = b; b = c; fa = fb; fb = fc;
+		c = b + GOLD*(b-a); EVAL(c,fc);
 	}
-	S[n][n] = (*func)(S[n]);
 	
-	for (i = 0; i < n; i++)
-		sum[i] = (n+1) * best[j] + lambda;
-	sum[n] = 0.0;
+	/* Brent's minimization */
+	x = w = v = b; fx = fw = fv = fb; if (a > c) SWAP(a,c);
+	
+	while (maxiter--) {
+		b = (a+c)/2.0; tol = eps * sqrt(1.0 + x*x);
+		if (fabs(x-b) <= (2.0*tol - (c-a)/2.0)) break;
+		
+		if (fabs(e) > tol) {
+			r = (x-w)*(fx-fv);
+			q = (x-v)*(fx-fw);
+			s = (x-v)*q-(x-w)*r;
+			
+			q = 2.0*(q-r); if (q > 0.0) s = -s; else q = -q;
+			
+			t = e; e = d;
+			
+			if (fabs(s) >= fabs(0.5*q*t) || s <= q*(a-x) || s >= q*(c-x)) {
+				e = (x >= b ? a-x : c-x); d = CGOLD * e;
+			} else {
+				d = s/q; u = x+d; if (u-a < 2.0*tol || c-u < 2.0*tol) d = SIGN(tol,b-x);
+			}
+		} else { e = (x >= b ? a-x : c-x); d = CGOLD * e; }
+		
+		u = (fabs(d) >= tol ? x+d : x+SIGN(tol,d)); EVAL(u,fu);
+				
+		if (fu <= fx) {
+			if (u >= x) a = x; else c = x;
+			v = w; w = x; x = u;
+			fv = fw; fw = fx; fx = fu;
+		} else {
+			if (u < x) a = u; else c = u;
+			if (fu <= fw || w == x) { v = w; w = u; fv = fw; fw = fu; }
+			else if (fu <= fv || v == x || v == w) { v = u; fv = fu; }
+		}
+	}
+	
+	/* update direction vectors */
+	for (i = 0; i < n; i++) { xi[i] *= x; p[i] = p[i] + xi[i]; }
+	
+	return fx;
 }
 
-/* Create new amoeba */
-double **new_amoeba(double x[], int n, double (*func)(double []), double lambda)
+/* n-dimensional minimization (using Powell's method) */
+double mmin(double p[], double **e, int n, double (*f)(double []), double eps)
 {
-	int i;
-	double **S = matrix(n+4, n+1), *best = S[n+1];
+	int i, j, s; double fp, fo, fx, sd, t; double po[n], px[n], xi[n];
 	
-	for (i = 0; i < n; i++)
-		best[i] = x[i];
-	best[n] = HUGE;
+	int maxiter = 1000; // maximal number of iterations
 	
-	restart_amoeba(S, n, func, lambda);
+	fp = (*f)(p); for (j = 0; j < n; j++) po[j] = p[j];
 	
-	return S;
-}
-
-
-/* Try to crawl in given direction */
-static double crawl(double **S, int n, double (*func)(double []), double T, int dir, double amount)
-{
-	int i;
-	double y, *x = S[dir], *best = S[n+1], *sum = S[n+2], *try = S[n+3];
-	
-	/* Give it a try... */
-	for (i = 0; i < n; i++)
-		try[i] = (1.0-amount) * (sum[i] - x[i])/n + amount * x[i];
-	try[n] = (*func)(try);
-	
-	/* Best move ever? */
-	if (try[n] < best[n])
-		for (i = 0; i <= n; i++) best[i] = try[i];
-	
-	y = try[n] - T * (1.0 + fabs(best[n]))/100.0 * log(RAND_MAX/rand());
-	
-	/* Favourable move? */
-	if (y < x[n]) {
+	while (maxiter--) {
+		fo = fp; s = 0; sd = 0.0;
+		
 		for (i = 0; i < n; i++) {
-			sum[i] += try[i] - x[i];
-			x[i] = try[i];
-		}
-		
-		x[n] = try[n];
-	}
-	
-	return y;
-}
-
-/* Shrink the amoeba around given vertex */
-static void shrink(double **S, int n, double (*func)(double []), double T, int dir, double amount)
-{
-	int i, j;
-	double *x = S[dir], *best = S[n+1], *sum = S[n+2];
-	
-	/* Shrink the amoeba */
-	for (i = 0; i <= n; i++) if (i != dir) {
-		for (j = 0; j < n; j++)
-			S[i][j] = (1.0-amount) * x[j] + amount * S[i][j];
-		S[i][n] = (*func)(S[i]);
-		
-		if (S[i][n] < best[n])
-			for (j = 0; j <= n; j++) best[j] = S[i][j];
-	}
-	
-	/* Update vertex sum */
-	for (i = 0; i < n; i++) {
-		sum[i] = 0.0;
-		
-		for (j = 0; j <= n; j++)
-			sum[i] += S[j][i];
-	}
-}
-
-/* Minimize the function by simulated annealing */
-void anneal(double **S, int n, double (*func)(double []), double T0, int maxsteps, double tol)
-{
-	int i, k, lo, hi;
-	double T, y, ylo, yhi, yhi2;
-	
-	for (k = 0; k < maxsteps; ) {
-		/* Cooling schedule */
-		T = T0 * exp(-log(100.0)*k/maxsteps);
-		
-		/* Rank simplex vertices */
-		lo = hi = 0;
-		ylo = HUGE; yhi = yhi2 = -HUGE;
-		
-		for (i = 0; i <= n; i++) {
-			y = S[i][n] + T * (1.0 + fabs(S[i][n]))/100.0 * log(RAND_MAX/rand());
+			for (j = 0; j < n; j++) xi[j] = e[j][i];
 			
-			if (y < ylo) { lo = i; ylo = y; }
-			if (y > yhi) { yhi2 = yhi; hi = i; yhi = y; }
-			else if (y > yhi2) { yhi2 = y; }
+			t = fp; fp = vmin(p, xi, n, f, eps);
+			if (fabs(fp-t) > sd) { sd = fabs(fp-t); s = i; }
 		}
 		
-		/* Are we done yet? */
-		if (2.0*fabs(S[hi][n]-S[lo][n])/(fabs(S[hi][n])+fabs(S[lo][n])) < tol) break;
+		if (2.0*fabs(fo-fp) <= eps*eps*(fabs(fo)+fabs(fp))) return fp;
 		
-		/* Make a move: try reflect first */
-		y = crawl(S, n, func, T, hi, -1.0); k++;
+		for (j = 0; j < n; j++) {
+			px[j] = 2.0*p[j]-po[j];
+			xi[j] = p[j]-po[j];
+			po[j] = p[j];
+		}
 		
-		if (y <= ylo) {
-			/* was good, try expanding */
-			y = crawl(S, n, func, T, hi, 2.0); k++;
-		} else if (y >= yhi2 ) {
-			/* no good, try contracting */
-			y = crawl(S, n, func, T, hi, 0.5); k++;
+		fx = (*f)(px);
+		
+		if (fx < fo && 2.0*(fo-2.0*fp+fx)*(fo-fp-sd)*(fo-fp-sd) < sd*(fo-fx)*(fo-fx)) {
+			fp = vmin(p, xi, n, f, eps);
 			
-			/* if that didn't work, try shrinking */
-			if (y >= yhi2) { shrink(S, n, func, T, lo, 0.5); k += n; }
+			for (j = 0; j < n; j++) {
+				e[j][s]=e[j][n-1]; e[j][n-1]=xi[j];
+			}
 		}
 	}
+	
+	return fp;
 }
 
 
@@ -722,7 +699,7 @@ static void init_fit_context(model *m, double **data, int n)
 double *fit_curve(model *m, double **data, int n)
 {
 	int i, j, k, D = m->params;
-	double *p = vector(D+1), **S;
+	double *p = vector(D+1), **e = identm(D);
 	
 	init_fit_context(m, data, n);
 	
@@ -737,14 +714,10 @@ double *fit_curve(model *m, double **data, int n)
 	}
 	
 	/* optimize */
-	S = new_amoeba(p, D, chi2, 1.0); anneal(S, D, chi2, 100.0, 8000, 1.0e-6);
-	restart_amoeba(S, D, chi2, 0.3); anneal(S, D, chi2,  10.0, 4000, 1.0e-6);
-	restart_amoeba(S, D, chi2, 0.1); anneal(S, D, chi2,   0.0, 2000, 1.0e-6);
-	
-	for (i = 0; i <= D; i++) p[i] = S[D+1][i]; m->p = p;
+	p[D] = mmin(p, e, D, chi2, 1.0e-6); m->p = p;
 	
 	free_vector(_weight_);
-	free_matrix(S);
+	free_matrix(e);
 	
 	return p;
 }
