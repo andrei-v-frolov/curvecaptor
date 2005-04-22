@@ -1,4 +1,4 @@
-/* $Id: tubefit.c,v 1.16 2005/04/22 06:50:03 afrolov Exp $ */
+/* $Id: tubefit.c,v 1.17 2005/04/22 06:56:29 afrolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
@@ -309,7 +309,7 @@ double **identm(unsigned long n)
  * 
  * Tube models:
  *   - Diode:  Child-Langmuir, Perugini
- *   - Triode: Child-Langmuir, Rydel, Scott, Koren
+ *   - Triode: Child-Langmuir, Rydel, Koren
  * 
  */
 
@@ -531,20 +531,8 @@ static double triode_rydel5(double p[], double V[])
 	return I;
 }
 
-/* Vacuum triode; Rydel model for grid current */
-static double triode_rydel_grid(double p[], double V[])
-{
-	double I;
-	double Vp = V[0], Vg = V[1];
-	double K = p[0], A = p[1], B = p[2];
-	
-	I = K * pow((A+Vp)/(B+Vp), 4.0) * pow(uramp(Vg), 1.5);
-	
-	return I;
-}
-
 /* Vacuum triode; Koren model (4 parameters) */
-static double init_koren4[] = {PRMREF(5,0), 5.0, PRMREF(5,1), 1.5};
+static double init_koren4[] = {PRMREF(4,0), 5.0, PRMREF(4,1), 1.5};
 static double triode_koren4(double p[], double V[])
 {
 	double I, U;
@@ -624,7 +612,6 @@ model mindex[] = {
 	{3, "Child-Langmuir law with contact potential", "triode_cp", 3, triode_cp, init_triode_cp},
 	{3, "Rydel model (4 parameters)", "rydel4", 4, triode_rydel4, init_rydel4},
 	{3, "Rydel model (5 parameters)", "rydel5", 5, triode_rydel5, init_rydel5},
-	{3, "Rydel model for grid current", "rydelg", 3, triode_rydel_grid},
 	{3, "Koren model (4 parameters)", "koren4", 4, triode_koren4, init_koren4},
 	{3, "Koren model (5 parameters)", "koren5", 5, triode_koren5, init_koren5},
 	{3, "Modified Koren model (6 parameters)", "koren6", 6, triode_koren6, init_koren6},
