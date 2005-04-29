@@ -1,10 +1,10 @@
-/* $Id: tubefit.c,v 1.18 2005/04/22 08:41:13 afrolov Exp $ */
+/* $Id: tubefit.c,v 1.19 2005/04/29 06:53:43 afrolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
  * Numerical backend - data fitting and approximation routines.
  * 
- * Copyright (C) 2001 Andrei Frolov <andrei@phys.ualberta.ca>
+ * Copyright (C) 2001-2005 Andrei Frolov <frolov@cita.utoronto.ca>
  * Distributed under the terms of GNU Public License.
  * 
  */
@@ -967,17 +967,26 @@ void write_data(FILE *fp, double **m, int n)
 /* Find a root of f(x)=0 bracketed in interval [x1,x2] */
 double zbrent(double (*f)(double), double x1, double x2, double eps)
 {
-	int i;
+	int i = 0;
 	double a = x1, b = x2, c = x2, d, e, min1, min2;
 	double fa = (*f)(a), fb = (*f)(b), fc = fb, p, q, r, s, tol, xm;
 	
-	#define ITMAX 100
-	#define EPS 3.0e-8
+	
+	/* try to bracket a root by extending the interval */
+	while (fa*fb > 0.0 && i++ < 16) {
+		if (fabs(fa) < fabs(fb))
+			fa=(*f)(a += GOLD*(a-b));
+		else
+			fb=(*f)(b += GOLD*(b-a));
+	}
 	
 	if ((fa > 0.0 && fb > 0.0) || (fa < 0.0 && fb < 0.0))
-		error("Root must be bracketed in zbrent()");
+		warning("Could not bracket a root in zbrent()");
 	
-	for (i = 0; i < ITMAX; i++) {
+	c = b; fc = fb;
+	
+	/* Brent's root finder*/
+	for (i = 0; i < 84; i++) {
 		if ((fb > 0.0 && fc > 0.0) || (fb < 0.0 && fc < 0.0)) {
 			c = a; fc = fa; e = d = b-a;
 		}
@@ -987,7 +996,7 @@ double zbrent(double (*f)(double), double x1, double x2, double eps)
 			c = a; fc = fa;
 		}
 		
-		tol = 2.0*EPS*fabs(b) + 0.5*eps; xm=0.5*(c-b);
+		tol = eps * (2.0*fabs(b) + 0.5); xm = 0.5*(c-b);
 		
 		if (fabs(xm) <= tol || fb == 0.0) return b;
 		if (fabs(e) >= tol && fabs(fa) > fabs(fb)) {
@@ -1017,11 +1026,7 @@ double zbrent(double (*f)(double), double x1, double x2, double eps)
 		fb=(*f)(b);
 	}
 	
-	error("Maximum number of iterations exceeded in zbrent()");
-	
-	#undef ITMAX
-	#undef EPS
-	
+	/* did not converge; give up */
 	return 0.0;
 }
 
@@ -1066,7 +1071,7 @@ double output(model *m, double Vg, double Vb, double I0, double R)
 	_model_ = m; _Vg_ = Vg; _I_ = I0;
 	_Vb_ = Vb; _G_ = (R != 0.0) ? 1000.0/R : 0.0;
 	
-	return zbrent(_loadline_, 0, 3000, 1.0e-12);
+	return zbrent(_loadline_, 0, 100, 1.0e-12);
 }
 
 
@@ -1075,8 +1080,8 @@ static double _swing_(double Vi)
 {
 	double Vmin, Vmax;
 	
-	_Vg_ = _Vbias_+Vi; Vmin = zbrent(_loadline_, 0, 3000, 1.0e-12);
-	_Vg_ = _Vbias_-Vi; Vmax = zbrent(_loadline_, 0, 3000, 1.0e-12);
+	_Vg_ = _Vbias_+Vi; Vmin = zbrent(_loadline_, 0, 100, 1.0e-12);
+	_Vg_ = _Vbias_-Vi; Vmax = zbrent(_loadline_, 0, 100, 1.0e-12);
 	
 	return fabs(Vmax-Vmin) - 2.0*_Vout_;
 }
@@ -1086,7 +1091,7 @@ double drive(model *m, double Vout, double Vb, double I0, double R)
 	_model_ = m; _Vbias_ = bias(m, Vb, I0); _Vout_ = Vout;
 	_I_ = I0; _Vb_ = Vb; _G_ = (R != 0.0) ? 1000.0/R : 0.0;
 	
-	return zbrent(_swing_, 0, Vout, 1.0e-12);
+	return zbrent(_swing_, 0, fabs(_Vbias_), 1.0e-12);
 }
 
 
@@ -1105,7 +1110,7 @@ double cf_output(model *m, double Vg, double Vb, double I0, double R)
 	_model_ = m; _Vg_ = Vg; _I_ = I0;
 	_Vb_ = Vb; _G_ = (R != 0.0) ? 1000.0/R : 0.0;
 	
-	return zbrent(_cf_loadline_, 0, 3000, 1.0e-12);
+	return zbrent(_cf_loadline_, 0, 100, 1.0e-12);
 }
 
 
@@ -1114,8 +1119,8 @@ static double _cf_swing_(double Vi)
 {
 	double Vmin, Vmax;
 	
-	_Vg_ = _Vbias_+Vi; Vmin = zbrent(_cf_loadline_, 0, 3000, 1.0e-12);
-	_Vg_ = _Vbias_-Vi; Vmax = zbrent(_cf_loadline_, 0, 3000, 1.0e-12);
+	_Vg_ = _Vbias_+Vi; Vmin = zbrent(_cf_loadline_, 0, 100, 1.0e-12);
+	_Vg_ = _Vbias_-Vi; Vmax = zbrent(_cf_loadline_, 0, 100, 1.0e-12);
 	
 	return fabs(Vmax-Vmin) - 2.0*_Vout_;
 }
@@ -1125,7 +1130,7 @@ double cf_drive(model *m, double Vout, double Vb, double I0, double R)
 	_model_ = m; _Vbias_ = bias(m, Vb, I0); _Vout_ = Vout;
 	_I_ = I0; _Vb_ = Vb; _G_ = (R != 0.0) ? 1000.0/R : 0.0;
 	
-	return zbrent(_cf_swing_, 0, 2.0*Vout, 1.0e-12);
+	return zbrent(_cf_swing_, Vout, 2.0*Vout, 1.0e-12);
 }
 
 
