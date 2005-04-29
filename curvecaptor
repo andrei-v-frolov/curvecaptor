@@ -1,22 +1,322 @@
 #!/usr/bin/wish
-# $Id: curvecaptor,v 1.11 2002/03/03 00:51:39 frolov Exp $
+# $Id: curvecaptor,v 1.12 2005/04/29 06:54:47 afrolov Exp $
 
 # Curve Captor - vacuum tube curve capture and model builder tool
 # 
-# Copyright (C) 2001 Andrei Frolov <andrei@phys.ualberta.ca>
+# Copyright (C) 2001-2005 Andrei Frolov <frolov@cita.utoronto.ca>
 # Distributed under the terms of GNU Public License.
+# 
+# Uses notebook widget by D. Richard Hipp <drh@acm.org>
 
+
+########################################################################
+# A Notebook widget for Tcl/Tk
+# $Revision: 1.12 $
+#
+# Copyright (C) 1996,1997,1998 D. Richard Hipp
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Library General Public
+# License as published by the Free Software Foundation; either
+# version 2 of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Library General Public License for more details.
+# 
+# You should have received a copy of the GNU Library General Public
+# License along with this library; if not, write to the
+# Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+# Boston, MA  02111-1307, USA.
+#
+# Author contact information:
+#   drh@acm.org
+#   http://www.hwaci.com/drh/
+
+
+#
+# Create a new notebook widget
+#
+proc Notebook:create {w args} {
+  global Notebook
+  set Notebook($w,label) ""
+  set Notebook($w,width) 400
+  set Notebook($w,height) 300
+  set Notebook($w,pages) {}
+  set Notebook($w,top) 0
+  set Notebook($w,pad) 5
+  set Notebook($w,fg,on) black
+  set Notebook($w,fg,off) grey50
+  canvas $w -bd 0 -highlightthickness 0 -takefocus 0
+  set Notebook($w,bg) [$w cget -bg]
+  bind $w <1> "Notebook:click $w %x %y"
+  bind $w <Configure> "Notebook:scheduleExpand $w"
+  eval Notebook:config $w $args
+}
+
+#
+# Change configuration options for the notebook widget
+#
+proc Notebook:config {w args} {
+  global Notebook
+  foreach {tag value} $args {
+    switch -- $tag {
+      -label {
+        set Notebook($w,label) $value
+      }
+      -width {
+        set Notebook($w,width) $value
+      }
+      -height {
+        set Notebook($w,height) $value
+      }
+      -pages {
+        set Notebook($w,pages) $value
+      }
+      -pad {
+        set Notebook($w,pad) $value
+      }
+      -bg {
+        set Notebook($w,bg) $value
+      }
+      -fg {
+        set Notebook($w,fg,on) $value
+      }
+      -disabledforeground {
+        set Notebook($w,fg,off) $value
+      }
+    }
+  }
+
+  #
+  # After getting new configuration values, reconstruct the widget
+  #
+  $w delete all
+  set Notebook($w,x1) $Notebook($w,pad)
+  set Notebook($w,x2) [expr $Notebook($w,x1)+2]
+  set Notebook($w,x3) [expr $Notebook($w,x2)+$Notebook($w,width)]
+  set Notebook($w,x4) [expr $Notebook($w,x3)+2]
+  set Notebook($w,y1) [expr $Notebook($w,pad)+2]
+  set Notebook($w,y2) [expr $Notebook($w,y1)+2]
+  set Notebook($w,y5) [expr $Notebook($w,y1)+30]
+  set Notebook($w,y6) [expr $Notebook($w,y5)+2]
+  set Notebook($w,y3) [expr $Notebook($w,y6)+$Notebook($w,height)]
+  set Notebook($w,y4) [expr $Notebook($w,y3)+2]
+  set x $Notebook($w,x1)
+  set cnt 0
+  set y7 [expr $Notebook($w,y1)+10]
+  $w create text $Notebook($w,width) $Notebook($w,y2) \
+     -anchor ne -font {courier 24 bold} -text $Notebook($w,label)
+  foreach p $Notebook($w,pages) {
+    set Notebook($w,p$cnt,x5) $x
+    set id [$w create text 0 0 -text $p -anchor nw -tags "p$cnt t$cnt"]
+    set bbox [$w bbox $id]
+    set width [lindex $bbox 2]
+    $w move $id [expr $x+10] $y7
+    $w create line \
+       $x $Notebook($w,y5)\
+       $x $Notebook($w,y2) \
+       [expr $x+2] $Notebook($w,y1) \
+       [expr $x+$width+16] $Notebook($w,y1) \
+       -width 2 -fill white -tags p$cnt
+    $w create line \
+       [expr $x+$width+16] $Notebook($w,y1) \
+       [expr $x+$width+18] $Notebook($w,y2) \
+       [expr $x+$width+18] $Notebook($w,y5) \
+       -width 2 -fill black -tags p$cnt
+    set x [expr $x+$width+20]
+    set Notebook($w,p$cnt,x6) [expr $x-2]
+    if {![winfo exists $w.f$cnt]} {
+      frame $w.f$cnt -bd 0
+    }
+    $w.f$cnt config -bg $Notebook($w,bg)
+    place $w.f$cnt -x $Notebook($w,x2) -y $Notebook($w,y6) \
+      -width $Notebook($w,width) -height $Notebook($w,height)
+    incr cnt
+  }
+  $w create line \
+     $Notebook($w,x1) [expr $Notebook($w,y5)-2] \
+     $Notebook($w,x1) $Notebook($w,y3) \
+     -width 2 -fill white
+  $w create line \
+     $Notebook($w,x1) $Notebook($w,y3) \
+     $Notebook($w,x2) $Notebook($w,y4) \
+     $Notebook($w,x3) $Notebook($w,y4) \
+     $Notebook($w,x4) $Notebook($w,y3) \
+     $Notebook($w,x4) $Notebook($w,y6) \
+     $Notebook($w,x3) $Notebook($w,y5) \
+     -width 2 -fill black
+  $w config -width [expr $Notebook($w,x4)+$Notebook($w,pad)] \
+            -height [expr $Notebook($w,y4)+$Notebook($w,pad)] \
+            -bg $Notebook($w,bg)
+  set top $Notebook($w,top)
+  set Notebook($w,top) -1
+  Notebook:raise.page $w $top
+}
+
+#
+# This routine is called whenever the mouse-button is pressed over
+# the notebook.  It determines if any page should be raised and raises
+# that page.
+#
+proc Notebook:click {w x y} {
+  global Notebook
+  if {$y<$Notebook($w,y1) || $y>$Notebook($w,y6)} return
+  set N [llength $Notebook($w,pages)]
+  for {set i 0} {$i<$N} {incr i} {
+    if {$x>=$Notebook($w,p$i,x5) && $x<=$Notebook($w,p$i,x6)} {
+      Notebook:raise.page $w $i
+      break
+    }
+  }
+}
+
+#
+# For internal use only.  This procedure raised the n-th page of
+# the notebook
+#
+proc Notebook:raise.page {w n} {
+  global Notebook
+  if {$n<0 || $n>=[llength $Notebook($w,pages)]} return
+  set top $Notebook($w,top)
+  if {$top>=0 && $top<[llength $Notebook($w,pages)]} {
+    $w move p$top 0 2
+  }
+  $w move p$n 0 -2
+  $w delete topline
+  if {$n>0} {
+    $w create line \
+       $Notebook($w,x1) $Notebook($w,y6) \
+       $Notebook($w,x2) $Notebook($w,y5) \
+       $Notebook($w,p$n,x5) $Notebook($w,y5) \
+       $Notebook($w,p$n,x5) [expr $Notebook($w,y5)-2] \
+       -width 2 -fill white -tags topline
+  }
+  $w create line \
+    $Notebook($w,p$n,x6) [expr $Notebook($w,y5)-2] \
+    $Notebook($w,p$n,x6) $Notebook($w,y5) \
+    -width 2 -fill white -tags topline
+  $w create line \
+    $Notebook($w,p$n,x6) $Notebook($w,y5) \
+    $Notebook($w,x3) $Notebook($w,y5) \
+    -width 2 -fill white -tags topline
+  set Notebook($w,top) $n
+  raise $w.f$n
+}
+
+#
+# Change the page-specific configuration options for the notebook
+#
+proc Notebook:pageconfig {w name args} {
+  global Notebook
+  set i [lsearch $Notebook($w,pages) $name]
+  if {$i<0} return
+  foreach {tag value} $args {
+    switch -- $tag {
+      -state {
+        if {"$value"=="disabled"} {
+          $w itemconfig t$i -fg $Notebook($w,fg,off)
+        } else {
+          $w itemconfig t$i -fg $Notebook($w,fg,on)
+        }
+      }
+      -onexit {
+        set Notebook($w,p$i,onexit) $value
+      }
+    }
+  }
+}
+
+#
+# This procedure raises a notebook page given its name.  But first
+# we check the "onexit" procedure for the current page (if any) and
+# if it returns false, we don't allow the raise to proceed.
+#
+proc Notebook:raise {w name} {
+  global Notebook
+  set i [lsearch $Notebook($w,pages) $name]
+  if {$i<0} return
+  if {[info exists Notebook($w,p$i,onexit)]} {
+    set onexit $Notebook($w,p$i,onexit)
+    if {"$onexit"!="" && [eval uplevel #0 $onexit]!=0} {
+      Notebook:raise.page $w $i
+    }
+  } else {
+    Notebook:raise.page $w $i
+  }
+}
+
+#
+# Return the frame associated with a given page of the notebook.
+#
+proc Notebook:frame {w name} {
+  global Notebook
+  set i [lsearch $Notebook($w,pages) $name]
+  if {$i>=0} {
+    return $w.f$i
+  } else {
+    return {}
+  }
+}
+
+#
+# Try to resize the notebook to the next time we become idle.
+#
+proc Notebook:scheduleExpand w {
+  global Notebook
+  if {[info exists Notebook($w,expand)]} return
+  set Notebook($w,expand) 1
+  after idle "Notebook:expand $w"
+}
+
+#
+# Resize the notebook to fit inside its containing widget.
+#
+proc Notebook:expand w {
+  global Notebook
+  set wi [expr [winfo width $w]-($Notebook($w,pad)*2+4)]
+  set hi [expr [winfo height $w]-($Notebook($w,pad)*2+36)]
+  Notebook:config $w -width $wi -height $hi
+  catch {unset Notebook($w,expand)}
+}
+
+########################################################################
+# notebook widget library code ends here
+########################################################################
+
+
+
+########################################################################
+# curvecaptor code begins here
+########################################################################
 
 # Initialization
-set file [lindex $argv 0]
-catch {image delete curves}
-image create photo curves -file $file
-set device [file rootname [file tail $file]]
 set backend [file join [file dirname $argv0] tubefit]
 
-wm title . "Curve Captor -- $file"
-wm iconname . "valve"
+# Notebook layout
+Notebook:create .n -pages {"Curve Tracer" "Device Data" "Device Model" "Spice Code"} -width 720 -height 696 -pad 2 
 
+set wt [Notebook:frame .n "Curve Tracer"]
+set wd [Notebook:frame .n "Device Data"]
+set wm [Notebook:frame .n "Device Model"]
+set ws [Notebook:frame .n "Spice Code"]
+
+pack .n -fill both -expand 1
+
+# Set device name and labels
+proc set_device {dev} {
+	global device
+	
+	set device $dev; Notebook:config .n -label $device
+	wm title . "Curve Captor[expr {$device ne "" ? " -- $device" : ""}]"
+}
+
+set_device {}
+
+
+
+#################### Curve Tracer ######################################
 
 # Curve parameters
 set val(Vp) 0; set incr(Vp) 100.0; set units(Vp) "V"
@@ -26,6 +326,7 @@ set val(Ig) 0; set incr(Ig)   1.0; set units(Ig) "mA"
 
 set type 3; set format {Vp Ip Vg}
 set param Vg; set axis 0; set markstyle "data(+)"
+
 
 # Step parameter value
 proc step {p} {
@@ -99,20 +400,18 @@ proc draw {c x y s} {
 
 
 # Toolbar
-set t .tools
-frame $t -borderwidth 3 -relief raised
+set t $wt.tools; frame $t -borderwidth 1 -relief flat
 
 label $t.active -foreground red
 label $t.plabel; label $t.units; label $t.at -text "@";
-entry $t.label -textvariable device -width 6 -justify left -font {courier 18 bold}
 entry $t.param -width 6 -justify left; entry $t.pincr -width 6 -justify right
 button $t.incr -text "increment" -command { step $param } -padx 0 -pady 0 -relief flat
 
 # Setup curve to be traced
 proc tracing {f p a} {
-	global t format param axis units
+	global wt format param axis units
 	
-	set format $f; set param $p; set axis $a;
+	set format $f; set param $p; set axis $a; set t $wt.tools
 	
 	$t.plabel configure -text "    $p ="
 	$t.param configure -textvariable val($p)
@@ -120,91 +419,89 @@ proc tracing {f p a} {
 	$t.units configure -text "\[$units($p)\]"
 }
 
-set m $t.curve.menu
-menubutton $t.curve -menu $m -textvariable curve -width 13 -direction below -indicatoron yes -borderwidth 2 -relief sunk
-menu $m -tearoff 0
+set mt $t.type.menu; set mc $t.curve.menu
+menubutton $t.type -menu $mt -textvariable stype -width 6 -direction below -indicatoron yes -borderwidth 2 -relief sunk
+menubutton $t.curve -menu $mc -textvariable curve -width 13 -direction below -indicatoron yes -borderwidth 2 -relief sunk
+menu $mt -tearoff 0; menu $mc -tearoff 0
 
-$m add cascade -menu $m.type -label "Vacuum tube type"
-$m add separator
-$m add command -label "Plate Characteristics: Vp axis" -command {
+$mt add command -label "diode" -command {
+	set type 2; set stype diode 
+	
+	foreach i {0 1 2} { $mc entryconfigure $i -state normal }
+	foreach i {4 5 6} { $mc entryconfigure $i -state disabled }
+}
+$mt add command -label "triode" -command {
+	set type 3; set stype triode 
+	
+	foreach i {0 1 2 4 5 6} { $mc entryconfigure $i -state normal }
+}
+
+
+$mc add command -label "Plate Characteristics: Vp axis" -command {
 	set curve "Vp axis"; set markstyle "tick(v)"; tracing {Vp Ip Vg} Vp 1
 }
-$m add command -label "Plate Characteristics: Ip axis" -command {
+$mc add command -label "Plate Characteristics: Ip axis" -command {
 	set curve "Ip axis"; set markstyle "tick(<)"; tracing {Vp Ip Vg} Ip 1
 }
-$m add command -label "Plate Characteristics Curve" -command {
+$mc add command -label "Plate Characteristics Curve" -command {
 	set curve "Plate curve"; set markstyle "data(+)"; tracing {Vp Ip Vg} Vg 0
 }
-$m add separator
-$m add command -label "Grid Characteristics: Vp axis" -command {
-	set curve "Vp axis"; set markstyle "tick(v)"; tracing {Vp Ig Vg} Vp 1
-}
-$m add command -label "Grid Characteristics: Ig axis" -command {
-	set curve "Ig axis"; set markstyle "tick(<)"; tracing {Vp Ig Vg} Ig 1
-}
-$m add command -label "Grid Characteristics Curve" -command {
-	set curve "Grid curve"; set markstyle "data(+)"; tracing {Vp Ig Vg} Vg 0
-}
-$m add separator
-$m add command -label "Transfer Characteristics: Vg axis" -command {
+$mc add separator
+$mc add command -label "Transfer Characteristics: Vg axis" -command {
 	set curve "Vg axis"; set markstyle "tick(v)"; tracing {Vg Ip Vp} Vg 1
 }
-$m add command -label "Transfer Characteristics: Ip axis" -command {
+$mc add command -label "Transfer Characteristics: Ip axis" -command {
 	set curve "Ip axis"; set markstyle "tick(<)"; tracing {Vg Ip Vp} Ip 1
 }
-$m add command -label "Transfer Characteristics Curve" -command {
+$mc add command -label "Transfer Characteristics Curve" -command {
 	set curve "Transfer curve"; set markstyle "data(+)"; tracing {Vg Ip Vp} Vp 0
 }
-$m invoke 2
-
-menu $m.type -tearoff 0
-$m.type add radiobutton -label "Diode" -variable type -value 2 -command {
-	foreach i {2 3 4 6 7 8 10 11 12} { $m entryconfigure $i -state normal }
-	foreach i {6 7 8 10 11 12} { $m entryconfigure $i -state disabled }
-}
-$m.type add radiobutton -label "Triode" -variable type -value 3 -command {
-	foreach i {2 3 4 6 7 8 10 11 12} { $m entryconfigure $i -state normal }
-}
-$m.type invoke 1
 
 
-pack $t.label $t.curve $t.plabel $t.param $t.at $t.pincr $t.units $t.incr -side left -expand no -pady 4
+$mt invoke 1; $mc invoke 0
+
+
+pack $t.type $t.curve $t.plabel $t.param $t.at $t.pincr $t.units $t.incr -side left -expand no -pady 4
 pack $t.active -side right -expand no -pady 4
 pack $t -side top -fill x
 
 
 # Curve tracer canvas
-set c .canvas
-canvas $c -width [image width curves] -height [image height curves]
-$c create image 0 0 -anchor nw -image curves
-pack $c -side top -padx .5m -pady .5m
+set ct $wt.canvas
+canvas $ct -width 720 -height 612 -background white -borderwidth 2 -relief groove
+pack $ct -side top -padx .5m -pady .5m
 
-bind $c <1>		{mark $c [ctag] %x %y $markstyle}
-bind $c <B1-Motion>	{move $c %x %y}
+bind $ct <1>		{mark $ct [ctag] [$ct canvasx %x] [$ct canvasy %y] $markstyle}
+bind $ct <B1-Motion>	{move $ct [$ct canvasx %x] [$ct canvasy %y]}
 
-$c bind X <2>		{select $c %x %y}
-$c bind X <B2-Motion>	{move $c %x %y}
+$ct bind X <2>		{select $ct [$ct canvasx %x] [$ct canvasy %y]}
+$ct bind X <B2-Motion>	{move $ct [$ct canvasx %x] [$ct canvasy %y]}
 
-bind . <Left>		{nudge $c -1 0}
-bind . <Right>		{nudge $c 1 0}
-bind . <Up>		{nudge $c 0 -1}
-bind . <Down>		{nudge $c 0 1}
-bind . <KP_Left>	{nudge $c -1 0}
-bind . <KP_Right>	{nudge $c 1 0}
-bind . <KP_Up>		{nudge $c 0 -1}
-bind . <KP_Down>	{nudge $c 0 1}
-bind . <KP_Home>	{nudge $c -1 -1}
-bind . <KP_Page_Up>	{nudge $c 1 -1}
-bind . <KP_End>		{nudge $c -1 1}
-bind . <KP_Page_Down>	{nudge $c 1 1}
+bind $ct <3>		"$ct scan mark %x %y"
+bind $ct <B3-Motion>	"$ct scan dragto %x %y 1"
+
+bind . <Left>		"nudge $ct -1  0"
+bind . <Right>		"nudge $ct 1  0"
+bind . <Up>		"nudge $ct  0 -1"
+bind . <Down>		"nudge $ct  0  1"
+bind . <KP_Left>	"nudge $ct -1  0"
+bind . <KP_Right>	"nudge $ct  1  0"
+bind . <KP_Up>		"nudge $ct  0 -1"
+bind . <KP_Down>	"nudge $ct  0  1"
+bind . <KP_Home>	"nudge $ct -1 -1"
+bind . <KP_Page_Up>	"nudge $ct  1 -1"
+bind . <KP_End>		"nudge $ct -1  1"
+bind . <KP_Page_Down>	"nudge $ct  1  1"
 
 # Activate tag
 proc activate {c t} {
+	global wt
+	
 	$c itemconf active -fill red; $c dtag active
 	$c addtag active withtag $t; $c itemconf active -fill orange
 	$c raise active
 	
-	.tools.active configure -text "Active marker: [lindex [$c gettags $t] 0] "
+	$wt.tools.active configure -text "Active marker: [lindex [$c gettags $t] 0] "
 }
 
 # New cross-hairs mark
@@ -232,9 +529,7 @@ proc move {c x y} {
 
 # Nudge active mark
 proc nudge {c dx dy} {
-	if {[$c find withtag active] == ""} {
-		return
-	}
+	if {[$c find withtag active] eq ""} { return }
 	
 	$c move active $dx $dy
 }
@@ -271,32 +566,42 @@ proc slurp {fp c} {
 proc save_markers {c} {
 	global device
 	
-	set f [tk_getSaveFile -initialfile "$device.crv"]
-	if {[string length $f] == 0} { return }
+	set f [tk_getSaveFile -initialfile "$device" -defaultextension ".crv"]; if {$f eq ""} { return }
 	
-	set fp [open $f w]; dump $fp $c; close $fp
+	catch {
+		set fp [open $f w]
+		set_device [file rootname [file tail $f]]
+		dump $fp $c; close $fp
+	}
 }
 
-# Load tagged curve data from a file
-proc load_markers {c} {
-	global device
+# Load tagged curve data from a file stream
+proc load_markers {c fp} { slurp $fp $c }
+
+# Load curve image into tracer
+proc load_image {c img} {
+	$c delete all; $c create image 0 0 -anchor nw -image $img
 	
-	set f [tk_getOpenFile -initialfile "$device.crv"]
-	if {[string length $f] == 0} { return }
-	
-	set fp [open $f r]; slurp $fp $c; close $fp
+	$c scan mark 0 0; $c scan dragto \
+		[expr ([$c cget -width]-[image width curves])/2] \
+		[expr ([$c cget -height]-[image height curves])/2] 1
 }
 
 
-set b .buttons; frame $b
-button $b.load -text "Load Markers" -command {load_markers $c}
-button $b.save -text "Save Markers" -command {save_markers $c}
-button $b.capture -text "Capture Curve" -command {capture_data $c}
-button $b.dismiss -text Dismiss -command {destroy .}
+set b $wt.buttons; frame $b
+button $b.load -text "Load Markers" -command "load_file {} .crv"
+button $b.save -text "Save Markers" -command "save_markers $ct"
+button $b.capture -text "Capture Curve >>" -command {
+	Notebook:raise .n "Device Data"
+	capture_data $wt.canvas $wd.text
+}
+button $b.dismiss -text Dismiss -command "destroy ."
 pack $b.load $b.save $b.capture $b.dismiss -side left -expand 1
 pack $b -side bottom -fill x -pady 2m
 
 
+
+#################### Device Data #######################################
 
 # Open curve data window
 proc curve_data {c} {
@@ -310,58 +615,51 @@ proc curve_data {c} {
 proc save_data {t} {
 	global device
 	
-	set f [tk_getSaveFile -initialfile "$device.dat"]
-	if {[string length $f] == 0} { return }
+	set f [tk_getSaveFile -initialfile "$device" -defaultextension ".dat"]; if {$f eq ""} { return }
 	
-	set fp [open $f w]; puts -nonewline $fp [$t get 0.0 end]; close $fp
+	catch {
+		set fp [open $f w]
+		set_device [file rootname [file tail $f]]
+		puts -nonewline $fp [$t get 0.0 end]; close $fp
+	}
 }
 
-# Load curve data from a file
-proc load_data {t} {
-	global device
-	
-	set f [tk_getOpenFile -initialfile "$device.dat"]
-	if {[string length $f] == 0} { return }
-	
-	set fp [open $f r]; $t insert end [read -nonewline $fp]; close $fp
-}
+# Load curve data from a file stream
+proc load_data {t fp} { $t insert end [read -nonewline $fp] }
 
 # Capture curve and open data window
-proc capture_data {c} {
-	global device
-	
-	set w .data
-	catch {destroy $w}
-	toplevel $w
-	
-	wm title $w "Curve Captor -- $device curve data"
-	wm iconname $w "valve"
-	
-	set t $w.text; set s $w.scroll
-	scrollbar $s -command "$t yview"
-	text $t -relief sunken -bd 2 -yscrollcommand "$s set" -setgrid 1 -width 64 -height 64
-	
+proc capture_data {c t} {
 	$t insert 0.0 [curve_data $c]
 	$t mark set insert 0.0
-	
-	set b $w.buttons; frame $b
-	button $b.load -text "Load Data" -command "load_data $t"
-	button $b.save -text "Save Data" -command "save_data $t"
-	button $b.model -text "Build Model" -command "model $t"
-	button $b.dismiss -text Dismiss -command "destroy $w"
-	pack $b.load $b.save $b.model $b.dismiss -side left -expand 1
-	
-	pack $b -side bottom -fill x -pady 2m
-	pack $s -side right -fill y
-	pack $t -expand yes -fill both
 }
 
 
+set t $wd.text; set s $wd.scroll
+scrollbar $s -command "$t yview" -bd 1
+text $t -bg white -relief groove -bd 2 -yscrollcommand "$s set" -setgrid 1 -width 100 -height 50
+
+set b $wd.buttons; frame $b
+button $b.load -text "Load Data" -command "load_file {} .dat"
+button $b.save -text "Save Data" -command "save_data $t"
+button $b.model -text "Build Model >>" -command {
+	Notebook:raise .n "Device Model"
+	model $wd.text
+}
+button $b.dismiss -text Dismiss -command "destroy ."
+pack $b.load $b.save $b.model $b.dismiss -side left -expand 1
+
+pack $b -side bottom -fill x -pady 2m
+pack $s -side right -fill y
+pack $t -expand yes -fill both
+
+
+
+#################### Device Model ######################################
 
 # Print canvas as a Postscript file
 proc print {c} {
-	set f [tk_getSaveFile -initialfile "|lpr"]
-	if {[string length $f] == 0} { return }
+	set f [tk_getSaveFile -initialfile "|lpr"]; if {$f eq ""} { return }
+	
 	if {[set p [string first "|" $f]] != -1} {
 		set f [string range $f $p end]
 	}
@@ -381,8 +679,8 @@ proc render {c t} {
 		append b { -L$V0,$I0}
 		if {$RL > 0} { append b {,$RL} }
 	}
-	if {($signal == "input") && ($Vin > 0)} { append b { -I$Vin} }
-	if {($signal == "output") && ($Vout > 0)} { append b { -O$Vout} }
+	if {($signal eq "input") && ($Vin > 0)} { append b { -I$Vin} }
+	if {($signal eq "output") && ($Vout > 0)} { append b { -O$Vout} }
 	if {$wave} { append b { -w} }
 	append b { -p $circuit << [$t get 0.0 end] 2>@ stderr}
 	
@@ -395,87 +693,90 @@ proc render {c t} {
 
 # Build models and inspect the fit
 proc model {t} {
-	global backend device type macro mparams
+	global wm backend device type macro mparams
 	
-	set w .model
-	catch {destroy $w}
-	toplevel $w
+	set c $wm.canvas; set m $wm.mframe.macro.menu
+	$c delete all; $m delete 0 100; set macro ""; set mparams ""
 	
-	wm title $w "Curve Captor -- $device model"
-	wm iconname $w "valve"
+	$c create text 360 288 -anchor c -text "Fitting model parameters; please wait..." -fill black; update
 	
-	
-	# Operation parameters
-	set f $w.pframe
-	frame $f -borderwidth 3 -relief raised
-	label $f.l1 -text "Rated power: "
-	label $f.l2 -text "W    Working point: "
-	label $f.l3 -text "V, "
-	label $f.l4 -text "mA; load "
-	label $f.l5 -text "R"
-	label $f.l6 -text "V"
-	
-	entry $f.pa -width 4 -justify right -textvariable Pa
-	entry $f.v0 -width 6 -justify right -textvariable V0
-	entry $f.i0 -width 6 -justify right -textvariable I0
-	entry $f.rl -width 6 -justify right -textvariable RL
-	checkbutton $f.wave -variable wave -text "AC signal"
-	entry $f.vac -width 6 -justify right
-	
-	set m $f.sig.menu
-	menubutton $f.sig -menu $m -textvariable signal -width 5 -direction below -indicatoron no -borderwidth 0 -relief sunk
-	menu $m -tearoff 0
-	$m add command -label "input" -command "set signal input; $f.vac configure -textvariable Vin"
-	$m add command -label "output" -command "set signal output; $f.vac configure -textvariable Vout"
-	$m invoke 0
-	
-	pack $f.l1 $f.pa $f.l2 $f.v0 $f.l3 $f.i0 $f.l4 $f.rl $f.l5 -side left -expand no -pady 4
-	pack $f.l6 $f.vac $f.sig $f.wave -side right -expand no -pady 4
-	pack $f -side top -fill x
-	
-	
-	# Plot canvas
-	set c $w.canvas
-	canvas $c -width 720 -height 576 -background white
-	$c create text 360 288 -anchor c -text "Fitting model parameters; please wait..." -fill black
-	pack $c -side top -padx .5m -pady .5m; update
-	
-	
-	# Model selector
-	set f $w.mframe; set m $f.macro.menu; set cm $f.circuit.menu
-	frame $f -borderwidth 3 -relief raised
-	menubutton $f.macro -menu $m -textvariable macro -width 7 -direction above -indicatoron yes -borderwidth 2 -relief sunk
-	entry $f.param -width 78 -justify left -textvariable mparams
-	menubutton $f.circuit -menu $cm -textvariable circuit -width 2 -direction above -indicatoron yes -borderwidth 2 -relief sunk
-	
-	menu $m -tearoff 0
 	set p [exec $backend -v -$type -m << [$t get 0.0 end] 2>@ stderr]
 	foreach i [split $p "\n"] { eval "$m $i" }
 	
-	menu $cm -tearoff 0
-	$cm add command -label "Single Ended" -command { set circuit "SE" }
-	$cm add command -label "Cathode Follower" -command { set circuit "CF" }
-	$cm add command -label "Push-Pull" -command { set circuit "PP" }
-	$cm add command -label "PP Cathode Follower" -command { set circuit "PPCF" } -state disabled
-	$cm invoke 0
-	
-	pack $f.macro $f.param $f.circuit -side left -expand 1 -pady 4
-	pack $f -side top -fill x
-	
-	
-	# Action buttons
-	set b $w.buttons; frame $b
-	button $b.plot -text Redraw -command "render $c $t"
-	button $b.print -text Print -command "print $c"
-	button $b.code -text "See Spice Code" -command "spice_code"
-	button $b.dismiss -text Dismiss -command "destroy $w"
-	pack $b.plot $b.print $b.code $b.dismiss -side left -expand 1
-	pack $b -side bottom -fill x -pady 2m
-	
-	render $c $t
+	render $wm.canvas $t
 }
 
 
+# Operation parameters
+set f $wm.pframe
+frame $f -borderwidth 1 -relief flat
+label $f.l1 -text "Rated power: "
+label $f.l2 -text "W    Working point: "
+label $f.l3 -text "V, "
+label $f.l4 -text "mA; load "
+label $f.l5 -text "R"
+label $f.l6 -text "V"
+
+entry $f.pa -width 4 -justify right -textvariable Pa
+entry $f.v0 -width 6 -justify right -textvariable V0
+entry $f.i0 -width 6 -justify right -textvariable I0
+entry $f.rl -width 6 -justify right -textvariable RL
+checkbutton $f.wave -variable wave -text "AC signal"
+entry $f.vac -width 6 -justify right
+
+set m $f.sig.menu
+menubutton $f.sig -menu $m -textvariable signal -width 5 -direction below -indicatoron no -borderwidth 0 -relief sunk
+menu $m -tearoff 0
+$m add command -label "input" -command "set signal input; $f.vac configure -textvariable Vin"
+$m add command -label "output" -command "set signal output; $f.vac configure -textvariable Vout"
+$m invoke 0
+
+pack $f.l1 $f.pa $f.l2 $f.v0 $f.l3 $f.i0 $f.l4 $f.rl $f.l5 -side left -expand no -pady 4
+pack $f.l6 $f.vac $f.sig $f.wave -side right -expand no -pady 4
+pack $f -side top -fill x
+
+
+# Plot canvas
+set c $wm.canvas
+canvas $c -width 720 -height 580 -background white -borderwidth 2 -relief groove
+pack $c -side top -padx .5m -pady .5m
+
+
+# Model selector
+set f $wm.mframe; set m $f.macro.menu; set cm $f.circuit.menu
+frame $f -borderwidth 0 -relief flat
+menubutton $f.macro -menu $m -textvariable macro -width 7 -direction above -indicatoron yes -borderwidth 2 -relief groove
+entry $f.param -width 80 -justify left -textvariable mparams -borderwidth 2 -relief groove
+menubutton $f.circuit -menu $cm -textvariable circuit -width 2 -direction above -indicatoron yes -borderwidth 2 -relief groove
+
+menu $m -tearoff 0
+
+menu $cm -tearoff 0
+$cm add command -label "Single Ended" -command { set circuit "SE" }
+$cm add command -label "Cathode Follower" -command { set circuit "CF" }
+$cm add command -label "Push-Pull" -command { set circuit "PP" }
+$cm add command -label "PP Cathode Follower" -command { set circuit "PPCF" } -state disabled
+$cm invoke 0
+
+pack $f.macro $f.param $f.circuit -side left -expand 1 -pady 4
+pack $f -side top -fill x
+
+
+# Action buttons
+set b $wm.buttons; frame $b
+button $b.plot -text Redraw -command "render $c $t"
+button $b.print -text Print -command "print $c"
+button $b.code -text "See Spice Code >>" -command {
+	Notebook:raise .n "Spice Code"
+	spice_code $ws.text
+}
+button $b.dismiss -text Dismiss -command "destroy ."
+pack $b.plot $b.print $b.code $b.dismiss -side left -expand 1
+pack $b -side bottom -fill x -pady 2m
+
+
+
+#################### Spice Model #######################################
 
 # Run text through m4 preprocessor
 proc m4 {h t} {
@@ -488,36 +789,84 @@ proc m4 {h t} {
 }
 
 # Inspect Spice code
-proc spice_code {} {
+proc spice_code {t} {
 	global device type macro mparams
-	
-	set w .model.code
-	catch {destroy $w}
-	toplevel $w
-	
-	wm title $w "Curve Captor -- $device Spice code"
-	wm iconname $w "valve"
-	
 	
 	set m "* $device macro model\n"
 	append m ".subckt $device  "
 	append m [lindex {{} {} {P K} {P G K}} $type]
 	append m "\n    $macro\($mparams\)\n.ends $device\n"
 	
-	
-	set t $w.text; set s $w.scroll
-	scrollbar $s -command "$t yview"
-	text $t -relief sunken -bd 2 -yscrollcommand "$s set" -setgrid 1 -width 120 -height 15
-	
+	$t delete 0.0 end
 	$t insert 0.0 $m
 	$t insert end "\n\n[m4 models $m]"
 	$t mark set insert 0.0
-	
-	set b $w.buttons; frame $b
-	button $b.dismiss -text Dismiss -command "destroy $w"
-	pack $b.dismiss -side left -expand 1
-	
-	pack $b -side bottom -fill x -pady 2m
-	pack $s -side right -fill y
-	pack $t -expand yes -fill both
 }
+
+
+set t $ws.text; set s $ws.scroll
+scrollbar $s -command "$t yview" -bd 1
+text $t -bg white -relief groove -bd 2 -yscrollcommand "$s set" -setgrid 1 -width 100 -height 50
+
+set b $ws.buttons; frame $b
+button $b.dismiss -text Dismiss -command "destroy ."
+pack $b.dismiss -side left -expand 1
+
+pack $b -side bottom -fill x -pady 2m
+pack $s -side right -fill y
+pack $t -expand yes -fill both
+
+
+
+#################### Main Entry Point ##################################
+
+# Load data from a file with auto-dispatch according to extension
+proc load_file {f ext} {
+	global device wt wd wm ws
+	
+	if {$f eq ""} {
+		set f [tk_getOpenFile \
+			-initialfile [expr {$device ne "" ? "$device$ext" : ""}] \
+			-defaultextension $ext]
+		if {$f eq ""} { return }
+	}
+	
+	if {$ext eq ""} { set ext [file extension $f] }
+	
+	if { [switch $ext {
+		.crv - .dat { catch {open $f r} fp }
+		default { catch {image create photo curves -file $f} }
+	}] } {
+		tk_messageBox -parent . -type ok \
+			-icon warning \
+			-title "file not found" \
+			-message "Could not open file '$f'"
+		return
+	}
+	
+	set_device [file rootname [file tail $f]]
+	
+	switch $ext {
+		.crv {
+			Notebook:raise .n "Curve Tracer"
+			load_markers $wt.canvas $fp
+			if { [lsearch [image names] curves] < 0 } {
+				$wt.buttons.capture invoke
+			}
+		}
+		
+		.dat {
+			Notebook:raise .n "Device Data"
+			load_data $wd.text $fp
+		}
+		
+		default {
+			Notebook:raise .n "Curve Tracer"
+			load_image $wt.canvas curves
+		}
+	}
+	
+	catch {close $fp}
+}
+
+load_file [lindex $argv 0] ""
