@@ -1,4 +1,4 @@
-/* $Id: tubefit.c,v 1.19 2005/04/29 06:53:43 afrolov Exp $ */
+/* $Id: tubefit.c,v 1.20 2005/05/08 10:36:08 afrolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
@@ -364,7 +364,7 @@ double vmin(double p[], double xi[], int n, double (*f)(double []), double eps)
 	}
 	
 	/* update direction vectors */
-	for (i = 0; i < n; i++) { xi[i] *= x; p[i] = p[i] + xi[i]; }
+	if (x != 0.0) for (i = 0; i < n; i++) { xi[i] *= x; p[i] = p[i] + xi[i]; }
 	
 	return fx;
 }
@@ -376,10 +376,12 @@ double mmin(double p[], double **e, int n, double (*f)(double []), double eps)
 	
 	int maxiter = 1000; // maximal number of iterations
 	
-	fp = (*f)(p); for (j = 0; j < n; j++) po[j] = p[j];
+	if (n == 1) { xi[0] = e[0][0]; return vmin(p, xi, n, f, eps); }
+	
+	fp = (*f)(p);
 	
 	while (maxiter--) {
-		fo = fp; s = 0; sd = 0.0;
+		for (j = 0; j < n; j++) po[j] = p[j]; fo = fp; s = 0; sd = 0.0;
 		
 		for (i = 0; i < n; i++) {
 			for (j = 0; j < n; j++) xi[j] = e[j][i];
@@ -390,11 +392,7 @@ double mmin(double p[], double **e, int n, double (*f)(double []), double eps)
 		
 		if (2.0*fabs(fo-fp) <= eps*eps*(fabs(fo)+fabs(fp))) return fp;
 		
-		for (j = 0; j < n; j++) {
-			px[j] = 2.0*p[j]-po[j];
-			xi[j] = p[j]-po[j];
-			po[j] = p[j];
-		}
+		for (j = 0; j < n; j++) { px[j] = 2.0*p[j]-po[j]; xi[j] = p[j]-po[j]; }
 		
 		fx = (*f)(px);
 		
@@ -402,7 +400,7 @@ double mmin(double p[], double **e, int n, double (*f)(double []), double eps)
 			fp = vmin(p, xi, n, f, eps);
 			
 			for (j = 0; j < n; j++) {
-				e[j][s]=e[j][n-1]; e[j][n-1]=xi[j];
+				for (i = s; i < n-1; i++) e[j][i] = e[j][i+1]; e[j][n-1] = xi[j];
 			}
 		}
 	}
