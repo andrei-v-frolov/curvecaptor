@@ -1,4 +1,4 @@
-/* $Id: tubefit.c,v 1.20 2005/05/08 10:36:08 afrolov Exp $ */
+/* $Id: tubefit.c,v 1.21 2005/05/09 09:00:03 afrolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
@@ -452,19 +452,6 @@ static double diode_cp(double p[], double V[])
 	return I;
 }
 
-/* Vacuum diode; Perugini model */
-static double init_perugini[] = {PRIOR(0), 0.0, PRIOR(1), 1.5};
-static double diode_perugini(double p[], double V[])
-{
-	double I;
-	double Vp = V[0];
-	double Ka = p[0], Kb = p[1], Vc = p[2], gamma = p[3];
-	
-	I = (Ka + Kb*Vp) * pow(uramp(Vp+Vc), gamma);
-	
-	return I;
-}
-
 
 /* Vacuum triode; Child-Langmuir law */
 static double triode(double p[], double V[])
@@ -591,7 +578,6 @@ model mindex[] = {
 	/* Vacuum diode models */
 	{2, "Child-Langmuir law", "diode", 1, diode},
 	{2, "Child-Langmuir law with contact potential", "diode_cp", 2, diode_cp, init_diode_cp},
-	{2, "Perugini model", "perugini", 4, diode_perugini, init_perugini},
 	
 	/* Vacuum triode models */
 	{3, "Child-Langmuir law", "triode", 2, triode},
