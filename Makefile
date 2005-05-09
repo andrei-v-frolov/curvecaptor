@@ -1,5 +1,5 @@
 ################################################################
-# $Id: Makefile,v 1.3 2005/04/22 06:50:03 afrolov Exp $
+# $Id: Makefile,v 1.4 2005/05/09 10:35:34 afrolov Exp $
 # Makefile for Curve Captor source code
 ################################################################
 
@@ -69,9 +69,11 @@ hdrs = $(wildcard *.h)
 objs = $(wildcard *.o *.a)
 bins = tubefit
 
+dist = curvecaptor-$(VERSION).tar.gz
+
 
 # Targets
-.PHONY: all clean distclean install
+.PHONY: all clean distclean install tarball
 
 all: $(bins)
 
@@ -86,9 +88,14 @@ install: $(bins)
 	$(INSTALL) -s $(bins) $(BINDIR)
 	$(INSTALL) curvecaptor $(BINDIR)
 
+tarball: $(dist)
+
 
 # Dependencies
 tubefit: tubefit.o
+
+$(dist): README Makefile curvecaptor tubefit.c models.m4
+	 tar cvf $(basename $@) $^; gzip -f -9 $(basename $@)
 
 
 
