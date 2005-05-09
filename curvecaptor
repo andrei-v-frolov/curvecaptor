@@ -1,5 +1,5 @@
 #!/usr/bin/wish
-# $Id: curvecaptor,v 1.12 2005/04/29 06:54:47 afrolov Exp $
+# $Id: curvecaptor,v 1.13 2005/05/09 07:08:17 afrolov Exp $
 
 # Curve Captor - vacuum tube curve capture and model builder tool
 # 
@@ -11,7 +11,7 @@
 
 ########################################################################
 # A Notebook widget for Tcl/Tk
-# $Revision: 1.12 $
+# $Revision: 1.13 $
 #
 # Copyright (C) 1996,1997,1998 D. Richard Hipp
 #
@@ -309,7 +309,7 @@ proc set_device {dev} {
 	global device
 	
 	set device $dev; Notebook:config .n -label $device
-	wm title . "Curve Captor[expr {$device ne "" ? " -- $device" : ""}]"
+	wm title . "Curve Captor[expr {$device != "" ? " -- $device" : ""}]"
 }
 
 set_device {}
@@ -529,7 +529,7 @@ proc move {c x y} {
 
 # Nudge active mark
 proc nudge {c dx dy} {
-	if {[$c find withtag active] eq ""} { return }
+	if {[$c find withtag active] == ""} { return }
 	
 	$c move active $dx $dy
 }
@@ -566,7 +566,7 @@ proc slurp {fp c} {
 proc save_markers {c} {
 	global device
 	
-	set f [tk_getSaveFile -initialfile "$device" -defaultextension ".crv"]; if {$f eq ""} { return }
+	set f [tk_getSaveFile -initialfile "$device" -defaultextension ".crv"]; if {$f == ""} { return }
 	
 	catch {
 		set fp [open $f w]
@@ -615,7 +615,7 @@ proc curve_data {c} {
 proc save_data {t} {
 	global device
 	
-	set f [tk_getSaveFile -initialfile "$device" -defaultextension ".dat"]; if {$f eq ""} { return }
+	set f [tk_getSaveFile -initialfile "$device" -defaultextension ".dat"]; if {$f == ""} { return }
 	
 	catch {
 		set fp [open $f w]
@@ -658,7 +658,7 @@ pack $t -expand yes -fill both
 
 # Print canvas as a Postscript file
 proc print {c} {
-	set f [tk_getSaveFile -initialfile "|lpr"]; if {$f eq ""} { return }
+	set f [tk_getSaveFile -initialfile "|lpr"]; if {$f == ""} { return }
 	
 	if {[set p [string first "|" $f]] != -1} {
 		set f [string range $f $p end]
@@ -679,8 +679,8 @@ proc render {c t} {
 		append b { -L$V0,$I0}
 		if {$RL > 0} { append b {,$RL} }
 	}
-	if {($signal eq "input") && ($Vin > 0)} { append b { -I$Vin} }
-	if {($signal eq "output") && ($Vout > 0)} { append b { -O$Vout} }
+	if {($signal == "input") && ($Vin > 0)} { append b { -I$Vin} }
+	if {($signal == "output") && ($Vout > 0)} { append b { -O$Vout} }
 	if {$wave} { append b { -w} }
 	append b { -p $circuit << [$t get 0.0 end] 2>@ stderr}
 	
@@ -824,14 +824,14 @@ pack $t -expand yes -fill both
 proc load_file {f ext} {
 	global device wt wd wm ws
 	
-	if {$f eq ""} {
+	if {$f == ""} {
 		set f [tk_getOpenFile \
-			-initialfile [expr {$device ne "" ? "$device$ext" : ""}] \
+			-initialfile [expr {$device != "" ? "$device$ext" : ""}] \
 			-defaultextension $ext]
-		if {$f eq ""} { return }
+		if {$f == ""} { return }
 	}
 	
-	if {$ext eq ""} { set ext [file extension $f] }
+	if {$ext == ""} { set ext [file extension $f] }
 	
 	if { [switch $ext {
 		.crv - .dat { catch {open $f r} fp }
