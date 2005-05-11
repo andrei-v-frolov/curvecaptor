@@ -1,9 +1,9 @@
-divert(-1) $Id: models.m4,v 1.7 2005/05/09 09:00:03 afrolov Exp $
+divert(-1) $Id: models.m4,v 1.8 2005/05/11 04:49:16 afrolov Exp $
 
 # Curve Captor - vacuum tube curve capture and model builder tool
 # Spice 3F4 model definitions - implemented as M4 macros
 # 
-# Copyright (C) 2001 Andrei Frolov <andrei@phys.ualberta.ca>
+# Copyright (C) 2001-2005 Andrei Frolov <frolov@cita.utoronto.ca>
 # Distributed under the terms of GNU Public License.
 
 # Spice syntax

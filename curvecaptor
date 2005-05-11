@@ -1,5 +1,5 @@
 #!/usr/bin/wish
-# $Id: curvecaptor,v 1.13 2005/05/09 07:08:17 afrolov Exp $
+# $Id: curvecaptor,v 1.14 2005/05/11 04:49:15 afrolov Exp $
 
 # Curve Captor - vacuum tube curve capture and model builder tool
 # 
@@ -11,7 +11,7 @@
 
 ########################################################################
 # A Notebook widget for Tcl/Tk
-# $Revision: 1.13 $
+# $Revision: 1.14 $
 #
 # Copyright (C) 1996,1997,1998 D. Richard Hipp
 #
@@ -685,7 +685,8 @@ proc render {c t} {
 	append b { -p $circuit << [$t get 0.0 end] 2>@ stderr}
 	
 	# Run backend
-	set p [eval "exec $b"]; $c delete all; foreach i [split $p "\n"] { eval "$c create $i" }
+	set p [eval "exec $b"]; $c delete all
+	foreach i [split $p "\n"] { catch {eval "$c create $i"} }
 	$c create text 675 26 -anchor e -font {courier 18 bold} -text "$device" -fill black
 	
 	update
@@ -701,7 +702,7 @@ proc model {t} {
 	$c create text 360 288 -anchor c -text "Fitting model parameters; please wait..." -fill black; update
 	
 	set p [exec $backend -v -$type -m << [$t get 0.0 end] 2>@ stderr]
-	foreach i [split $p "\n"] { eval "$m $i" }
+	foreach i [split $p "\n"] { catch {eval "$m $i"} }
 	
 	render $wm.canvas $t
 }
@@ -755,7 +756,6 @@ menu $cm -tearoff 0
 $cm add command -label "Single Ended" -command { set circuit "SE" }
 $cm add command -label "Cathode Follower" -command { set circuit "CF" }
 $cm add command -label "Push-Pull" -command { set circuit "PP" }
-$cm add command -label "PP Cathode Follower" -command { set circuit "PPCF" } -state disabled
 $cm invoke 0
 
 pack $f.macro $f.param $f.circuit -side left -expand 1 -pady 4
