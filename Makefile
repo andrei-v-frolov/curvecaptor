@@ -1,5 +1,5 @@
 ################################################################
-# $Id: Makefile,v 1.4 2005/05/09 10:35:34 afrolov Exp $
+# $Id: Makefile,v 1.5 2005/05/11 04:42:35 afrolov Exp $
 # Makefile for Curve Captor source code
 ################################################################
 
@@ -18,7 +18,7 @@ AR	= ar -r
 RANLIB	= ranlib
 INSTALL = install
 
-VERSION = 0.1
+VERSION = 0.9
 
 
 
@@ -29,8 +29,11 @@ VERSION = 0.1
 # Define if you want debugging code compiled in
 #DEBUG = 1
 
+# Define if you have getline() available
+HAVE_GETLINE = 1
+
 # Define if you have FFTW library (for distortion analysis)
-FFTW = 1
+HAVE_FFTW = 1
 
 FFTINCS = -I$(HOME)/local/include
 FFTLIBS = -L$(HOME)/local/lib -lrfftw -lfftw
@@ -50,8 +53,12 @@ endif
 INCLUDE	= 
 LIBS	= -lm
 
-ifdef FFTW
-DEFINES:= -DFFTW $(DEFINES)
+ifdef HAVE_GETLINE
+DEFINES:= -DHAVE_GETLINE $(DEFINES)
+endif
+
+ifdef HAVE_FFTW
+DEFINES:= -DHAVE_FFTW $(DEFINES)
 INCLUDE:= $(FFTINCS) $(INCLUDE)
 LIBS   := $(FFTLIBS) $(LIBS)
 endif

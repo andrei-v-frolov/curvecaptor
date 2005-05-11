@@ -1,4 +1,4 @@
-/* $Id: tubefit.c,v 1.21 2005/05/09 09:00:03 afrolov Exp $ */
+/* $Id: tubefit.c,v 1.22 2005/05/11 04:42:35 afrolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
@@ -29,7 +29,7 @@
 /* Usage */
 char *usage_msg[] = {
 	"Vacuum tube model builder, Version " VERSION,
-	"Author: Andrei Frolov <andrei@phys.ualberta.ca>",
+	"Author: Andrei Frolov <frolov@cita.utoronto.ca>",
 	"",
 	"Usage: " SELF " -[2|3|4|5] [...] < curve.dat",
 	"",
@@ -284,6 +284,98 @@ void free_matrix(double **m)
 	
 	free((void *)((unsigned long *)(m)-1));
 }
+
+
+
+/******************* getline() replacement ****************************/
+
+/* 
+ * getline.c -- Replacement for GNU C library function getline
+ * 
+ * Copyright (C) 1993 Free Software Foundation, Inc.
+ * Distributed under the terms of GNU Public License.
+ * 
+ * Written by Jan Brittenson <bson@gnu.ai.mit.edu>
+ * Modified by Andrei Frolov <frolov@cita.utoronto.ca>
+ * 
+ */
+
+#if !defined(HAVE_GETLINE)
+
+#include <sys/types.h>
+#include <assert.h>
+#include <errno.h>
+
+/* Always add at least this many bytes when extending the buffer.  */
+#define MIN_CHUNK 64
+
+/* Read up to (and including) a TERMINATOR from STREAM into *LINEPTR
+   (and null-terminate it). *LINEPTR is a pointer returned from malloc
+   (or NULL), pointing to *N characters of space.  It is realloc'd as
+   necessary.  Return the number of characters read (not including the
+   null terminator), or -1 on error or EOF.  On a -1 return, the caller
+   should check feof(), if not then errno has been set to indicate the
+   error.  */
+
+ssize_t getdelim(char **lineptr, size_t *n, int delimiter, FILE *stream)
+{
+	int nchars_avail;	/* Allocated but unused chars in *LINEPTR.  */
+	char *read_pos;		/* Where we're reading into *LINEPTR.  */
+	
+	if (!lineptr || !n || !stream) { errno = EINVAL; return -1; }
+	
+	if (!*lineptr) {
+		*n = MIN_CHUNK; *lineptr = (char *)malloc(*n);
+		if (!*lineptr) { errno = ENOMEM; return -1; }
+	}
+	
+	nchars_avail = *n; read_pos = *lineptr;
+	
+	for (;;) {
+		register int c = getc(stream); int save_errno = errno;
+		
+		/* We always want at least one char left in the buffer,
+		   since we always (unless we get an error while reading
+		   the first char) NULL-terminate the line buffer.  */
+		assert((*lineptr + *n) == (read_pos + nchars_avail));
+		
+		if (nchars_avail < 2) {
+			if (*n > MIN_CHUNK) *n <<= 1; else *n += MIN_CHUNK;
+			
+			nchars_avail = *n + *lineptr - read_pos;
+			*lineptr = (char *)realloc(*lineptr, *n);
+			if (!*lineptr) { errno = ENOMEM; return -1; }
+			
+			read_pos = *n - nchars_avail + *lineptr;
+			assert((*lineptr + *n) == (read_pos + nchars_avail));
+		}
+		
+		/* Might like to return partial line, but there is no place for
+		   us to store errno.  And we don't want to just lose errno.  */
+		if (ferror(stream)) { errno = save_errno; return -1; }
+		
+		/* Return partial line, if any.  */
+		if (c == EOF) { if (read_pos == *lineptr) return -1; else break; }
+		
+		*read_pos++ = c;
+		nchars_avail--;
+		
+		/* Return the line.  */
+		if (c == delimiter) break;
+	}
+	
+	/* Done - NULL terminate and return the number of chars read.  */
+	*read_pos = '\0';
+	
+	return read_pos - *lineptr;
+}
+
+ssize_t getline (char **lineptr, size_t *n, FILE *stream)
+{
+	return getdelim(lineptr, n, '\n', stream);
+}
+
+#endif /* !HAVE_GETLINE */      /* end of getline() replacement */
 
 
 
@@ -1165,7 +1257,7 @@ double pp_drive(model *m, double Vp, double Vbias, double Vb, double R)
 
 /****************** Distortion analysis *******************************/
 
-#ifdef FFTW
+#ifdef HAVE_FFTW
 
 #include <rfftw.h>
 
@@ -1194,7 +1286,7 @@ static void distortion(double *f, double *S, double *D, int N)
 	
 	rfftw_destroy_plan(p);
 }
-#endif /* FFTW */
+#endif /* HAVE_FFTW */
 
 
 
@@ -1330,7 +1422,7 @@ void se_plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, doub
 			}
 			fprintf(fp, "-smooth 1 -fill green -width 2\n");
 			
-			#ifdef FFTW
+			#ifdef HAVE_FFTW
 			distortion(V, S, D, N);
 			
 			fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline black -fill white -width 1\n",
@@ -1358,7 +1450,7 @@ void se_plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, doub
 				fprintf(fp, "text %g %g -anchor s -justify center -text \"%.3g\" -fill black -font {helvetica 6}\n",
 						X(x*Vmax), Y(y*Imax)-2, -hdb);
 			}
-			#endif /* FFTW */
+			#endif /* HAVE_FFTW */
 			
 			free_vector(V); free_vector(S); free_vector(D);
 		}
@@ -1539,7 +1631,7 @@ void cf_plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, doub
 			}
 			fprintf(fp, "-smooth 1 -fill green -width 2\n");
 			
-			#ifdef FFTW
+			#ifdef HAVE_FFTW
 			distortion(V, S, D, N);
 			
 			fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline black -fill white -width 1\n",
@@ -1567,7 +1659,7 @@ void cf_plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, doub
 				fprintf(fp, "text %g %g -anchor s -justify center -text \"%.3g\" -fill black -font {helvetica 6}\n",
 						X(x*Vmax), Y(y*Imax)-2, -hdb);
 			}
-			#endif /* FFTW */
+			#endif /* HAVE_FFTW */
 			
 			free_vector(V); free_vector(S); free_vector(D);
 		}
@@ -1756,7 +1848,7 @@ void pp_plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, doub
 			}
 			fprintf(fp, "-smooth 1 -fill green -width 2\n");
 			
-			#ifdef FFTW
+			#ifdef HAVE_FFTW
 			distortion(V, S, D, N);
 			
 			fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline black -fill white -width 1\n",
@@ -1784,7 +1876,7 @@ void pp_plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, doub
 				fprintf(fp, "text %g %g -anchor s -justify center -text \"%.3g\" -fill black -font {helvetica 6}\n",
 						X(x*Vmax), Y(y*Imax)-2, -hdb);
 			}
-			#endif /* FFTW */
+			#endif /* HAVE_FFTW */
 			
 			free_vector(V); free_vector(S); free_vector(D);
 		}
