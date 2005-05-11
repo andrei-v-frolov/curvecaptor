@@ -1,0 +1,58 @@
+            C U R V E   C A P T O R     ---      R E A D M E
+            ================================================
+
+Curve Captor is a free vacuum tube modeling software that brings the
+advantages of modern computer simulation tools to design of vacuum tube
+electronics. It can build Spice-compatible models from the traced tube
+data (either from datasheet curves or obtained elsewhere) and do bias
+and loadline calculations, as well as simple waveform analysis for
+common gain stages. Generated non-linear models are macro-based and
+easily adaptable to various flavors of Spice, and are sophisticated
+enough to give realistic distortion figures. Simple GUI and high
+computational speed assist rapid development cycle.
+
+Curve Captor is designed to be portable. It is written in Tcl/Tk (GUI),
+standard C (numerical backend) with FFTW libraries (for distortion
+calculations), and uses m4 at runtime (for macro models). Curve Captor
+is developed under Linux and is distributed under the terms of GNU
+Public License. 
+
+
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!  W A R N I N G :   Vacuum tube circuits involve LETHAL voltages. !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+If you electrocute yourself using this software or models, I am not
+responsible. I repeat, 400V is just a number for a computer program,
+but grounded through your body it is a LETHAL current.
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+
+
+Quick getting started guide:
+============================
+
+Included in this distribution are:
+	
+	README		- this file
+	curvecaptor	- GUI frontend
+	tubefit.c	- numerical backend
+	models.m4	- macro model definitions
+
+This is a source code only distribution; compile numerical backend by
+editing Makefile to suit your machine configuration and then running
+make. Edit models.m4 if your Spice distribution syntax differs from
+standard Spice 3F4. Install binaries (curvecaptor and tubefit) as well
+as models.m4 to a directory somewhere in your PATH. Run curvecaptor to
+start the GUI. Further progress should be described in documentation,
+which is non-existent at the moment. Good luck.
+
+Bug reports, patches, suggestions, flames, etc. should go to the author.
+
+
+
+Well, that's all for now...
+
+-- Andrei Frolov <frolov@cita.utoronto.ca>
