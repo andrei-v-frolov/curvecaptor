@@ -1,4 +1,4 @@
-/* $Id: tubefit.c,v 1.22 2005/05/11 04:42:35 afrolov Exp $ */
+/* $Id: tubefit.c,v 1.23 2005/05/22 00:20:27 afrolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
@@ -1261,7 +1261,7 @@ double pp_drive(model *m, double Vp, double Vbias, double Vb, double R)
 
 #include <rfftw.h>
 
-/* Calculate power spectrum and harmonic distortion */
+/* Calculate power spectrum and harmonic distortion - the fast way */
 static void distortion(double *f, double *S, double *D, int N)
 {
 	int k; double F[N], N2 = N*N;
@@ -1286,6 +1286,36 @@ static void distortion(double *f, double *S, double *D, int N)
 	
 	rfftw_destroy_plan(p);
 }
+
+#else
+
+/* Calculate power spectrum and harmonic distortion - the slow way */
+static void distortion(double *f, double *S, double *D, int N)
+{
+	int j, k; double FS, FC, N2 = N*N;
+	
+	/* Power spectrum */
+	for (k = 0; k <= N/2; k++) {
+		FS = 0.0; FC = 0.0;
+		
+		for (j = 0; j < N; j++) {
+			FS += f[j]*sin(2.0*M_PI*k*j/N);
+			FC += f[j]*cos(2.0*M_PI*k*j/N);
+		}
+		
+		S[k] = 4.0*(FS*FS + FC*FC)/N2;
+	}
+	
+	/* Harmonic distortion */
+	S[0] /= 4.0; D[0] = D[1] = 0.0;
+	for (k = N/2; k > 1; k--) {
+		D[k] = sqrt(S[k]/S[1]);
+		if (k > 2) D[k % 2] += S[k];
+	}
+	D[0] = sqrt(D[0]/S[1]);
+	D[1] = sqrt(D[1]/S[1]);
+}
+
 #endif /* HAVE_FFTW */
 
 
@@ -1422,7 +1452,6 @@ void se_plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, doub
 			}
 			fprintf(fp, "-smooth 1 -fill green -width 2\n");
 			
-			#ifdef HAVE_FFTW
 			distortion(V, S, D, N);
 			
 			fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline black -fill white -width 1\n",
@@ -1450,7 +1479,6 @@ void se_plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, doub
 				fprintf(fp, "text %g %g -anchor s -justify center -text \"%.3g\" -fill black -font {helvetica 6}\n",
 						X(x*Vmax), Y(y*Imax)-2, -hdb);
 			}
-			#endif /* HAVE_FFTW */
 			
 			free_vector(V); free_vector(S); free_vector(D);
 		}
@@ -1631,7 +1659,6 @@ void cf_plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, doub
 			}
 			fprintf(fp, "-smooth 1 -fill green -width 2\n");
 			
-			#ifdef HAVE_FFTW
 			distortion(V, S, D, N);
 			
 			fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline black -fill white -width 1\n",
@@ -1659,7 +1686,6 @@ void cf_plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, doub
 				fprintf(fp, "text %g %g -anchor s -justify center -text \"%.3g\" -fill black -font {helvetica 6}\n",
 						X(x*Vmax), Y(y*Imax)-2, -hdb);
 			}
-			#endif /* HAVE_FFTW */
 			
 			free_vector(V); free_vector(S); free_vector(D);
 		}
@@ -1848,7 +1874,6 @@ void pp_plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, doub
 			}
 			fprintf(fp, "-smooth 1 -fill green -width 2\n");
 			
-			#ifdef HAVE_FFTW
 			distortion(V, S, D, N);
 			
 			fprintf(fp, "polygon %g %g %g %g %g %g %g %g -outline black -fill white -width 1\n",
@@ -1876,7 +1901,6 @@ void pp_plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, doub
 				fprintf(fp, "text %g %g -anchor s -justify center -text \"%.3g\" -fill black -font {helvetica 6}\n",
 						X(x*Vmax), Y(y*Imax)-2, -hdb);
 			}
-			#endif /* HAVE_FFTW */
 			
 			free_vector(V); free_vector(S); free_vector(D);
 		}
