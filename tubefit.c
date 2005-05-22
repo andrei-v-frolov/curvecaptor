@@ -1,4 +1,4 @@
-/* $Id: tubefit.c,v 1.23 2005/05/22 00:20:27 afrolov Exp $ */
+/* $Id: tubefit.c,v 1.24 2005/05/22 09:04:09 afrolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
@@ -92,8 +92,13 @@ static char         *user_model = NULL;
  *
  */
 
-#define TINY 1.0e-8
-#define ppow(x,g) ((x > 0.0) ? pow(x, g) : -pow(-x, g))
+#ifndef TINY /* machine precision */
+#define TINY 2.2204460492503131e-16
+#endif /* TINY */
+
+#ifndef HUGE /* largest number */
+#define HUGE 1.7976931348623158e308
+#endif /* HUGE */
 
 
 /******************* Basic error handlers *****************************/
@@ -222,23 +227,6 @@ unsigned long *grow_uvector(unsigned long *v, unsigned long n)
 void free_vector(void *v)
 {
 	free((void *)(v));
-}
-
-
-/* copy vector data with subscript range [0..n] */
-void vcopy(double src[], double dest[], unsigned long n)
-{
-	register unsigned long i;
-	
-	for (i = 0; i < n; i++) dest[i] = src[i];
-}
-
-/* apply gamma transformation to a vector */
-void vgamma(double src[], double dest[], unsigned long n, double gamma)
-{
-	register unsigned long i;
-	
-	for (i = 0; i < n; i++) dest[i] = ppow(src[i], gamma);
 }
 
 
@@ -511,22 +499,16 @@ double mmin(double p[], double **e, int n, double (*f)(double []), double eps)
 
 #define MAGIC(v) (((int)(v) >> 8) == PRIOR_MAGIC)
 
-
-/* uramp() like in Spice 3f4 */
-static double uramp(double x)
-{
-	return (x > 0.0) ? x : 0.0;
-}
+#define ppow(x,g) ((x > 0.0) ? pow(x, g) : 0.0)
 
 
 /* Vacuum diode; Child-Langmuir law */
 static double diode(double p[], double V[])
 {
-	double I;
-	double Vp = V[0];
+	double I, Vp = V[0];
 	double K = p[0];
 	
-	I = K * pow(uramp(Vp), 1.5);
+	I = K * ppow(Vp, 1.5);
 	
 	return I;
 }
@@ -535,11 +517,10 @@ static double diode(double p[], double V[])
 static double init_diode_cp[] = {PRIOR(0), 0.0};
 static double diode_cp(double p[], double V[])
 {
-	double I;
-	double Vp = V[0];
+	double I, Vp = V[0];
 	double K = p[0], Vc = p[1];
 	
-	I = K * pow(uramp(Vp+Vc), 1.5);
+	I = K * ppow(Vp+Vc, 1.5);
 	
 	return I;
 }
@@ -548,11 +529,10 @@ static double diode_cp(double p[], double V[])
 /* Vacuum triode; Child-Langmuir law */
 static double triode(double p[], double V[])
 {
-	double I;
-	double Vp = V[0], Vg = V[1];
+	double I, Vp = V[0], Vg = V[1];
 	double K = p[0], mu = p[1];
 	
-	I = K * pow(uramp(mu*Vg + Vp), 1.5);
+	I = K * ppow(mu*Vg + Vp, 1.5);
 	
 	return I;
 }
@@ -561,11 +541,10 @@ static double triode(double p[], double V[])
 static double init_triode_cp[] = {PRIOR(0), PRIOR(1), 0.0};
 static double triode_cp(double p[], double V[])
 {
-	double I;
-	double Vp = V[0], Vg = V[1];
+	double I, Vp = V[0], Vg = V[1];
 	double K = p[0], mu = p[1], Vc = p[2];
 	
-	I = K * pow(uramp(mu*Vg + Vp + Vc), 1.5);
+	I = K * ppow(mu*Vg + Vp + Vc, 1.5);
 	
 	return I;
 }
@@ -574,11 +553,10 @@ static double triode_cp(double p[], double V[])
 static double init_rydel4[] = {PRIOR(0), 0.0, PRIOR(1), PRIOR(2)};
 static double triode_rydel4(double p[], double V[])
 {
-	double I;
-	double Vp = V[0], Vg = V[1];
+	double I, Vp = V[0], Vg = V[1];
 	double Ka = p[0], Kb = p[1], mu = p[2], Vc = p[3];
 	
-	I = (Ka + Kb*Vg) * pow(uramp(mu*Vg + Vp + Vc), 1.5);
+	I = (Ka + Kb*Vg) * ppow(mu*Vg + Vp + Vc, 1.5);
 	
 	return I;
 }
@@ -587,11 +565,10 @@ static double triode_rydel4(double p[], double V[])
 static double init_rydel5[] = {PRIOR(0), PRIOR(1), PRIOR(2), PRIOR(3), 0.0};
 static double triode_rydel5(double p[], double V[])
 {
-	double I;
-	double Vp = V[0], Vg = V[1];
+	double I, Vp = V[0], Vg = V[1];
 	double Ka = p[0], Kb = p[1], mu = p[2], Vc = p[3], C = p[4];
 	
-	I = (Ka + Kb*Vg) * pow(uramp(mu*Vg + Vp + Vc), 1.5) * Vp/(Vp+C);
+	I = (Ka + Kb*Vg) * ppow(mu*Vg + Vp + Vc, 1.5) * Vp/(Vp+C);
 	
 	return I;
 }
@@ -600,12 +577,11 @@ static double triode_rydel5(double p[], double V[])
 static double init_koren4[] = {PRMREF(4,0), 5.0, PRMREF(4,1), 1.5};
 static double triode_koren4(double p[], double V[])
 {
-	double I, U;
-	double Vp = V[0], Vg = V[1];
+	double I, U, Vp = V[0], Vg = V[1];
 	double K = p[0], Kp = p[1], mu = p[2], gamma = p[3];
 	
 	U = Vp * log(1.0 + exp(Kp + Kp*mu*Vg/Vp))/Kp;
-	I = K * pow(uramp(U), gamma);
+	I = K * ppow(U, gamma);
 	
 	return I;
 }
@@ -614,12 +590,11 @@ static double triode_koren4(double p[], double V[])
 static double init_koren5[] = {PRIOR(0), PRIOR(1), PRIOR(2), 0.0, PRIOR(3)};
 static double triode_koren5(double p[], double V[])
 {
-	double I, U;
-	double Vp = V[0], Vg = V[1];
+	double I, U, Vp = V[0], Vg = V[1];
 	double K = p[0], Kp = p[1], mu = p[2], Kv = p[3], gamma = p[4];
 	
 	U = Vp * log(1.0 + exp(Kp + Kp*mu*Vg/sqrt(1000.0*Kv + Vp*Vp)))/Kp;
-	I = K * pow(uramp(U), gamma);
+	I = K * ppow(U, gamma);
 	
 	return I;
 }
@@ -628,12 +603,11 @@ static double triode_koren5(double p[], double V[])
 static double init_koren6[] = {PRMREF(2,0), 0.0, PRMREF(2,1), PRMREF(2,2), 0.0, PRMREF(2,3)};
 static double triode_koren6(double p[], double V[])
 {
-	double I, U;
-	double Vp = V[0], Vg = V[1];
+	double I, U, Vp = V[0], Vg = V[1];
 	double K = p[0], Kc = p[1], Kp = p[2], mu = p[3], nu = p[4], gamma = p[5];
 	
 	U = Vp * log(1.0 + Kc + exp(Kp + Kp*(mu+nu*Vg/1000.0)*Vg/Vp))/Kp;
-	I = K * pow(uramp(U), gamma);
+	I = K * ppow(U, gamma);
 	
 	return I;
 }
@@ -642,12 +616,11 @@ static double triode_koren6(double p[], double V[])
 static double init_koren8[] = {PRIOR(0), PRIOR(1), PRIOR(2), PRIOR(3), PRIOR(4), 0.0, 0.0, PRIOR(5)};
 static double triode_koren8(double p[], double V[])
 {
-	double I, U;
-	double Vp = V[0], Vg = V[1];
+	double I, U, Vp = V[0], Vg = V[1];
 	double K = p[0], Kc = p[1], Kp = p[2], mu = p[3], nu = p[4], Kv = p[5], Vc = p[6], gamma = p[7];
 	
 	U = Vp * log(1.0 + Kc + exp(Kp + Kp*(mu+nu*Vg/1000.0)*Vg/sqrt(Kv*Kv+(Vp-Vc)*(Vp-Vc))))/Kp;
-	I = K * pow(uramp(U), gamma);
+	I = K * ppow(U, gamma);
 	
 	return I;
 }
@@ -709,7 +682,7 @@ static double chi2(double p[])
 }
 
 /* Initialize global fit context */
-static void init_fit_context(model *m, double **data, int n)
+void init_fit_context(model *m, double **data, int n)
 {
 	int i;
 	double *w = vector(n);
@@ -1262,7 +1235,7 @@ double pp_drive(model *m, double Vp, double Vbias, double Vb, double R)
 #include <rfftw.h>
 
 /* Calculate power spectrum and harmonic distortion - the fast way */
-static void distortion(double *f, double *S, double *D, int N)
+void distortion(double *f, double *S, double *D, int N)
 {
 	int k; double F[N], N2 = N*N;
 	rfftw_plan p = rfftw_create_plan(N, FFTW_REAL_TO_COMPLEX, FFTW_ESTIMATE);
@@ -1290,7 +1263,7 @@ static void distortion(double *f, double *S, double *D, int N)
 #else
 
 /* Calculate power spectrum and harmonic distortion - the slow way */
-static void distortion(double *f, double *S, double *D, int N)
+void distortion(double *f, double *S, double *D, int N)
 {
 	int j, k; double FS, FC, N2 = N*N;
 	
