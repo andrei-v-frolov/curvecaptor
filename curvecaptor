@@ -1,5 +1,5 @@
-#!/usr/bin/wish
-# $Id: curvecaptor,v 1.15 2005/05/31 01:15:14 afrolov Exp $
+#!/usr/bin/env wish
+# $Id: curvecaptor,v 1.16 2005/05/31 04:06:23 afrolov Exp $
 
 # Curve Captor - vacuum tube curve capture and model builder tool
 # 
@@ -11,7 +11,7 @@
 
 ########################################################################
 # A Notebook widget for Tcl/Tk
-# $Revision: 1.15 $
+# $Revision: 1.16 $
 #
 # Copyright (C) 1996,1997,1998 D. Richard Hipp
 #
@@ -287,6 +287,183 @@ proc Notebook:expand w {
 
 
 
+#################### Graphics Resources ################################
+
+image create photo ::img::cc -data "
+R0lGODlheQFUAIABAAAAAP///yH5BAEKAAEALAAAAAB5AVQAAAL+jI+py+0Po5y02ouz3rz73wHi
+SILmiaYcyaruC8cKS7fyjedNzev+DzzwhsGiMTTsHZfMTTLZjEoTT+L0ijVUodnub2v1iotg7vis
+KivRbJk63I473zS5HfVE5O/8SVUP1ydoEThTN4hoWPOwmOgIscZo85jYCDlJmSl0KMGpyWcZgfmp
+JSIYKjpK2oZ6ObK6+XrX6ioLy+rZWQKbyxapu3uLRisZTNp79puqKpxF7PBcyZyMXDzdLKVca/tZ
+LRbNUIg9Bb6g7Vh+dQ6dPk7mzQ4/2J4tH07v/mWvuK9Oxz2sHyB8+XIQLHXQBQA//4yNSSiu4BGI
+CVM43NEQ4Df+gQM5SnTjEWHINBrvZVwY8Jq1ix+NUKx4QmWsk75GRmypz+Y6gyz5NaypEybOmCMD
+3MQhs+M/oD23NR060xTRoEWnSq1wyMzDijuhGhVqMqm5rjfEAjMbhexYsLeOYlDr8ylWlITQriy5
+kardfFo9cGX7VW5YuisA+4BLxTCoq4n7zimKGOPewHjrKuY5WaRgcworT13rWENkpYwvuI1LWDRM
+zwxLx8tMeXNUPFW1LEut+XJs1pJlD/YdFffb0bMztCOeW3hv14WR86aMunZ05U6pV2d+13rrl1d9
+n96Nvfr25xT+lH/ucJH0xrB3D3e+Hjx50qfN/57PPjxo/ab+t4zXflFWwN02IGn9wdceffglF1pw
+6yCHkGUFXoeWPOlNkuB+Cw5k3HcaakegR3Rk5w2EHcanYDrgaCTghtfl9Nd6e5ylxnINmvjehCSq
+CE+AwWT4IYhWxTgKfvZReGR+N+I4lz2b1Ujia0pqRhuK/7UXyT5JvjZikOd42JyFT9pA1ooA1QHk
+fUJ+MKOEGJazpZplfMignDE0mJtTCnLpmY9guulijqiQl6WZbdqYCy2efKmbl9YZemY0O/nZ6J53
+auXkGniiKZZ/9MWlJHZMhvjUg8w8cxOlVqoJUqEymbHkLpkemqeBqHn5Aq0OijoNMZuyOOqLuWIq
+aRhbtlj+qqegBncfriTFqug11egaW6j8+RUsosakCuuhnKAaZ63iLuvskIwq0+Op1F6Y7Y4WtQmt
+EmAw66Ccyf6oUontptiTt6+qwilLmOBpAsEnarput+Ylisy8y9HbrL0FK8uvLWKqilLDkf6pWqMz
+UryrrC3MOeV0+ZL5772XIQvsT3eV7F5+1vbJJsc7dgdywCJbfGwvLOsHsoaJpVgzvkXuHC7MMSfH
+nqO4pSnftVei7DCVtbKrzaBvSpu0rRGGvObL9XYEtmwDH312SaYshS1gnjZCxLdUuxZRKHJzTa1P
+SpXdMdZIp9a11z7fzR/bSDBJE4MII20jokyPbTKhW3P+k3d2kfttl85qE05q5U2amLjii84dpr/q
+em6g1gbf6vTmIibNcuc23xz22EFH3fIrQFa968zA3R547/b2KfXljwYvuo60F2/J7bgLR/pjup5U
+fNm8dl3m6gfDiXrFtX/ulqtH1c249OSTHBigKVM/5r6+C9n9zDCwj3Z9044c6PvHO3/ed/RXP7up
+hS1+nMEM+yIHAp0dLnvak13/MqK+YXGkgU04oJ0SiL/q8clsAQzSgd7ghFZtqIPvMFzEJtauyKxq
+XIKiIBM0GKo+QKkWz1pb/liXlu8hyR0rLGGl+mZDGK7EK+MQIhGB2MMjKnGJRfshE58IRfBBJ4pU
+rGJmWUqgPCtqcYtcSh8XvwhGJN4wjGS0IgnLiMYnnjGNbDziGtsIR5y8MY505IsT64hHTbgvj3zU
+YxL7CEhpQC2QhETHHwuJyDjcMZGMzMsYGwlJOxwykpQkRxYricmU6DCTnEzJFgsAADs="
+
+image create photo ::img::sakura -data "
+R0lGODlheABwAIQQAO+71PG+1vO/2PDE2u7J3fHM4O7R4/LU5vfW4/Xb5vfe6PTi6/Ln7vXr8fLw
+9Pn+/////////////////////////////////////////////////////////////////yH5BAEK
+ABAALAAAAAB4AHAAAAX+ICSOZGmeaJoCgOq+cCzPtMq2dq3vfF+ygcCK5Ssaj6UAQLlELYPIqLR2
+Awp/N+h0yzUFBIIg8yoSB4HdNFcAALvD0Pdbq64XAQN3m+1Wsllge3aDPQIDh4iHeImKjU2EkDKI
+eJQDi39/jYmRnC6WjJOgn5+LnaYnoouiiZeGp68QBLIABAO1q7ibsJ20tAR4s7eMt7WywrucxYey
+y7bGs860o4jIkc/M17bOzNvXtdWD3t7d4rW+zuB25evlBsbusulq7PTGAPDd8l0E8O7+9d76GdPH
+hd8/frIO/oNnMGFChgSnvGtoYOFCgwIbYowYpWLFiQodInT4USSBAhz+kTD0iPCjS5YXMWI0kPKI
+x5s4b87M+VBWgYo1ixwYmhPnT5g6bxb4OXQpzaA8inpE4M/AzwIHnFY8gJPr1qwHoPIYSjQnV6Jo
+uTpdCtaA161PxdY4gKCu3bpuEyQwkOCsXqxkvaZNK1fHXgMIuNalmyCx48N89XLt29dt4MZhC9PQ
+y5dqZKp6qSJonHgy5cl2OXfWTKNuY72NK6beOxp26tqqb6czMyBAong1Yo8GrTryYdd8t3pWHTsB
+sidKDvleVsynUxiwX4fGvdj1a8S2tWfPfMIqISAsQF176VZF9vfvFSjoO3m++Nelh5cgenXpwDRf
+sDFKdSJZddRQCJz+AN+C2cln33u46TVfgiS89RZDwgywRSWGaLMeP1nBZVcJDJb4YIkNOjeCcAb6
+lE0iZtCxAym2ALNNASf9hABWya02ggILLBAfbCfCtwBfQjI4wmIhGmWMM3lMF0YVOFChSo0r8YMA
+iFtJpp0IegWZgJjwATlmAg+SuaACI1S0115e9cQNI3ssQQQNYmhi4zNVwcVYXw+KkGSQQhJq6Jlh
+vifmoEKCyZloFR3F55OWUGLnnTEwcYMi2HzoFGOIHdAXAvPJB4GhqKaqKpmHjunoaKFalZWk1Z2D
+CBhMyJDFFzRaQuA7snn05gHyZScCA6smqyyhEIQHK1mWyTknh4H+wEDllKpIs55W/jA22lCwNQoB
+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"
+
+image create photo ::img::tubefit -data "
+R0lGODlhYABaAOf/ABxUgiFYhRlcjyRaiB1ekStfji5ekzZgijxfhC5nom5XSmtZUGZaWUhkgThn
+nTdpmDNqpnJbTldidEVnjGJgZFRle0FqlGBibnVdUDdtqUtsiTlvq3dgU0NvoDxxrXtjVjx0qXNm
+Y11siXpmXWBvdVNxj05ymkJ2soBoW0l1rGpufGVwiE93o2V0el11i31saFB3qYRrXkZ6t3pvb3lw
+dVh5oIduYV55mEp9uottYVt5poZwaFR8uo5vZGx7gWt6jGJ7o0+AvYtzZlh/sZJxYWh8n2p+j3d6
+h4Z2dGZ/m29+im9/hViAv4F4fmmAll+BrpV0ZG9+nFOFw2t/ooB6hXZ+kZJ3bFuDwnOCiHp+jXR/
+mJh3Zm6CpXt+mWuDrH5+lIJ+jWyHnZt5aXOGkV6IwXaGjHCHl5N8c3SDonGEqG+Go22FrmiHtZB9
+gHyDl3qFkp17aneGmGWJvHSHnnKGqXqFnnmJj3CIsXuKkGONxnWJrHiLonKLtHWMqX6Jo3yLnn6N
+k4eHnXyLqnCOvHmMsISLn3aOuH2Qm4GMpnuPs4KRl4SPnYGRo5KLloSPqYmNqH+SqnqSu4GRr36S
+toWVm4iToHyUvouTm4OWoYmQsYOWrn2Wv4KVuoaVtH+XwYqVr4CYwoeapY2UtYqaoJGUr42YpYmZ
+q4WYvYyXsYiYt5OYmoKaxImcp4ibs4ebv4Scxo+atIueqoybuoWdx42gq5GgpoefyZaeppWeso+f
+vo+irpqfoYygxJSfuYqizJKhwYykz5Sjw5GkyZaluJSns5enrZikvp2lrY+o0pqpvJiox5WpzpKq
+1Z2owqSprJ2ts5uuuZSs16SstJms0p2szKGsxp+uzqiwuKOzuqGw0J6x16G0wKWwy6Oy0q+0t6W0
+1KG126W4xKi4v6m1z6y40rG5wqq52aa636+61a6+3rK+2bbB3LPC4rLG37jE37vG4r7G277K5b3M
+4MTM4cHN6MTP68bR38jQ5czR4MzU6dDY7tTa6tre7uDh6+Xm8P///yH5BAEKAP8ALAAAAABgAFoA
+AAj+AP8JHEiwoMGDCAU2q1aNG8OGCSNKnEixosV/zYw1U6aMmjVu48Z940byosmTKBMm66Wxmcds
+38ihU0dTHbpx3Kil3MmTIi6WLrN1k7muqFGj6shx6ykQlylYvaIaG8bUJFSN1Lp9m1nU3buvYN+5
+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
+1m6NGgEBADs="
+
+
+
 ########################################################################
 # curvecaptor code begins here
 ########################################################################
@@ -295,12 +472,13 @@ proc Notebook:expand w {
 set backend [file join [file dirname $argv0] tubefit]
 
 # Notebook layout
-Notebook:create .n -pages {"Curve Tracer" "Device Data" "Device Model" "Spice Code"} -width 720 -height 696 -pad 2 
+Notebook:create .n -pages {"Curve Tracer" "Device Data" "Device Model" "Spice Code" "About"} -width 720 -height 696 -pad 2 
 
 set wt [Notebook:frame .n "Curve Tracer"]
 set wd [Notebook:frame .n "Device Data"]
 set wm [Notebook:frame .n "Device Model"]
 set ws [Notebook:frame .n "Spice Code"]
+set wa [Notebook:frame .n "About"]
 
 pack .n -fill both -expand 1
 
@@ -833,6 +1011,62 @@ pack $b -side bottom -fill x -pady 2m
 pack $s -side right -fill y
 pack $t -expand yes -fill both
 
+
+
+#################### About Dialog ######################################
+
+# Draw box with rounded corners
+proc rbox {w x1 y1 x2 y2 r c} {
+	$w create line [expr $x1+$r] $y1 [expr $x2-$r] $y1 -width 3 -fill $c
+	$w create line [expr $x1+$r] $y2 [expr $x2-$r] $y2 -width 3 -fill $c
+	$w create line $x1 [expr $y1+$r] $x1 [expr $y2-$r] -width 3 -fill $c
+	$w create line $x2 [expr $y1+$r] $x2 [expr $y2-$r] -width 3 -fill $c
+	
+	$w create arc $x1 [expr $y1+2*$r] [expr $x1+2*$r] $y1 -start  90 -style arc -width 3 -outline $c
+	$w create arc $x2 [expr $y1+2*$r] [expr $x2-2*$r] $y1 -start   0 -style arc -width 3 -outline $c
+	$w create arc $x2 [expr $y2-2*$r] [expr $x2-2*$r] $y2 -start -90 -style arc -width 3 -outline $c
+	$w create arc [expr $x1+2*$r] $y2 $x1 [expr $y2-2*$r] -start 180 -style arc -width 3 -outline $c
+}
+
+set ca $wa.canvas
+canvas $ca -width 720 -height 646 -background white -borderwidth 2 -relief groove
+
+rbox $ca 60 65 660 210 24 black
+$ca create image 75 135 -anchor w -image ::img::tubefit
+$ca create image 195 75 -anchor nw -image ::img::cc
+$ca create text 195 145 -anchor nw -font {times 16} -text "
+Vacuum tube curve tracer and model builder tool   -   Version 0.9.1
+Copyright (C) 2001-2005 Andrei Frolov <frolov@cita.utoronto.ca>"
+$ca create image 650 65 -anchor c -image ::img::sakura
+
+rbox $ca 60 230 660 500 24 black
+$ca create text 85 240 -anchor nw -font {times 16} -text "
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software Foundation, Inc.,
+51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA"
+
+rbox $ca 60 530 660 610 24 red
+$ca create text 360 540 -anchor n -font {times 18 bold} -fill red -text "W A R N I N G :   Vacuum tube circuits involve LETHAL voltages."
+$ca create text 360 550 -anchor n -font {times 16} -fill black -text "
+Your safety is your own responsibility. By using this program you agree
+not to hold me liable for whatever mayhem and destruction that might ensue."
+
+pack $ca -side top -padx .5m -pady .5m
+
+set b $wa.buttons; frame $b
+button $b.dismiss -text Dismiss -command "destroy ."
+pack $b.dismiss -side left -expand 1
+pack $b -side bottom -fill x -pady 2m
 
 
 #################### Main Entry Point ##################################
