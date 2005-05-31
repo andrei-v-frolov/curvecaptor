@@ -1,5 +1,5 @@
 #!/usr/bin/wish
-# $Id: curvecaptor,v 1.14 2005/05/11 04:49:15 afrolov Exp $
+# $Id: curvecaptor,v 1.15 2005/05/31 01:15:14 afrolov Exp $
 
 # Curve Captor - vacuum tube curve capture and model builder tool
 # 
@@ -11,7 +11,7 @@
 
 ########################################################################
 # A Notebook widget for Tcl/Tk
-# $Revision: 1.14 $
+# $Revision: 1.15 $
 #
 # Copyright (C) 1996,1997,1998 D. Richard Hipp
 #
@@ -484,14 +484,17 @@ bind . <Left>		"nudge $ct -1  0"
 bind . <Right>		"nudge $ct 1  0"
 bind . <Up>		"nudge $ct  0 -1"
 bind . <Down>		"nudge $ct  0  1"
-bind . <KP_Left>	"nudge $ct -1  0"
-bind . <KP_Right>	"nudge $ct  1  0"
-bind . <KP_Up>		"nudge $ct  0 -1"
-bind . <KP_Down>	"nudge $ct  0  1"
-bind . <KP_Home>	"nudge $ct -1 -1"
-bind . <KP_Page_Up>	"nudge $ct  1 -1"
-bind . <KP_End>		"nudge $ct -1  1"
-bind . <KP_Page_Down>	"nudge $ct  1  1"
+
+catch { # Keypad might be absent, but don't give up
+	bind . <KP_Left>	"nudge $ct -1  0"
+	bind . <KP_Right>	"nudge $ct  1  0"
+	bind . <KP_Up>		"nudge $ct  0 -1"
+	bind . <KP_Down>	"nudge $ct  0  1"
+	bind . <KP_Home>	"nudge $ct -1 -1"
+	bind . <KP_Page_Up>	"nudge $ct  1 -1"
+	bind . <KP_End>		"nudge $ct -1  1"
+	bind . <KP_Page_Down>	"nudge $ct  1  1"
+}
 
 # Activate tag
 proc activate {c t} {
@@ -780,17 +783,19 @@ pack $b -side bottom -fill x -pady 2m
 
 # Run text through m4 preprocessor
 proc m4 {h t} {
-	global argv0
+	global argv0 spice
 	
 	set f [file join [file dirname $argv0] "$h.m4"]
 	set fp [open $f r]; set ht [read $fp]; append ht $t; close $fp
 	
-	return [exec m4 << $ht 2>@ stderr]
+	return [exec m4 -DSPICE=$spice << $ht 2>@ stderr]
 }
 
 # Inspect Spice code
 proc spice_code {t} {
 	global device type macro mparams
+	
+	if {$macro == ""} { return; }
 	
 	set m "* $device macro model\n"
 	append m ".subckt $device  "
@@ -809,8 +814,20 @@ scrollbar $s -command "$t yview" -bd 1
 text $t -bg white -relief groove -bd 2 -yscrollcommand "$s set" -setgrid 1 -width 100 -height 50
 
 set b $ws.buttons; frame $b
+
+set ms $b.spice.menu
+menubutton $b.spice -menu $ms -textvariable spice -width 16 -direction below -indicatoron yes -borderwidth 2 -relief raised
+menu $ms -tearoff 0
+
+$ms add command -label "Spice 3F4" -command { set spice "Spice 3F4"; spice_code $ws.text; }
+$ms add separator
+$ms add command -label "OrCAD PSpice" -command { set spice "PSpice"; spice_code $ws.text; }
+$ms add command -label "LT SwitcherCAD" -command { set spice "LTSpice"; spice_code $ws.text; }
+$ms add command -label "Altium CircuitMaker" -command { set spice "CircuitMaker"; spice_code $ws.text; }
+$ms invoke 0
+
 button $b.dismiss -text Dismiss -command "destroy ."
-pack $b.dismiss -side left -expand 1
+pack $b.spice $b.dismiss -side left -expand 1
 
 pack $b -side bottom -fill x -pady 2m
 pack $s -side right -fill y
@@ -869,4 +886,5 @@ proc load_file {f ext} {
 	catch {close $fp}
 }
 
+tkwait visibility .
 load_file [lindex $argv 0] ""
