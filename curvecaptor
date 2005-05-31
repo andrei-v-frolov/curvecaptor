@@ -1,5 +1,5 @@
 #!/usr/bin/env wish
-# $Id: curvecaptor,v 1.16 2005/05/31 04:06:23 afrolov Exp $
+# $Id: curvecaptor,v 1.17 2005/05/31 07:16:57 afrolov Exp $
 
 # Curve Captor - vacuum tube curve capture and model builder tool
 # 
@@ -11,7 +11,7 @@
 
 ########################################################################
 # A Notebook widget for Tcl/Tk
-# $Revision: 1.16 $
+# $Revision: 1.17 $
 #
 # Copyright (C) 1996,1997,1998 D. Richard Hipp
 #
@@ -850,7 +850,7 @@ proc print {c} {
 
 # Render curves plot on a canvas
 proc render {c t} {
-	global Pa I0 V0 RL Vin Vout wave signal
+	global Pa I0 V0 RL Vin Vout Wout wave signal
 	global backend device type macro mparams circuit
 	
 	# Backend options
@@ -862,6 +862,7 @@ proc render {c t} {
 	}
 	if {($signal == "input") && ($Vin > 0)} { append b { -I$Vin} }
 	if {($signal == "output") && ($Vout > 0)} { append b { -O$Vout} }
+	if {($signal == "power") && ($Wout > 0)} { append b { -W$Wout} }
 	if {$wave} { append b { -w} }
 	append b { -p $circuit << [$t get 0.0 end] 2>@ stderr}
 	
@@ -909,8 +910,9 @@ entry $f.vac -width 6 -justify right
 set m $f.sig.menu
 menubutton $f.sig -menu $m -textvariable signal -width 5 -direction below -indicatoron no -borderwidth 0 -relief sunk
 menu $m -tearoff 0
-$m add command -label "input" -command "set signal input; $f.vac configure -textvariable Vin"
-$m add command -label "output" -command "set signal output; $f.vac configure -textvariable Vout"
+$m add command -label "input" -command "set signal input; $f.vac configure -textvariable Vin; $f.l6 configure -text V"
+$m add command -label "output" -command "set signal output; $f.vac configure -textvariable Vout; $f.l6 configure -text V"
+$m add command -label "power" -command "set signal power; $f.vac configure -textvariable Wout; $f.l6 configure -text W"
 $m invoke 0
 
 pack $f.l1 $f.pa $f.l2 $f.v0 $f.l3 $f.i0 $f.l4 $f.rl $f.l5 -side left -expand no -pady 4

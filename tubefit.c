@@ -1,4 +1,4 @@
-/* $Id: tubefit.c,v 1.24 2005/05/22 09:04:09 afrolov Exp $ */
+/* $Id: tubefit.c,v 1.25 2005/05/31 07:16:57 afrolov Exp $ */
 
 /*
  * Curve Captor - vacuum tube curve capture and model builder tool
@@ -41,7 +41,7 @@ char *usage_msg[] = {
 	"  -[2|3|4|5]	valve type (2=diode, 3=triode, etc)",
 	"  -P Pa 	rated anode dissipation power",
 	"  -L Vp,Ip[,R]	loadline: working point and load resistance",
-	"  -[I|O] V	specify input/output AC signal amplitude",
+	"  -[I|O|W] V	specify input/output AC signal amplitude or power",
 	"",
 	" Model fit options:",
 	"  -C flags	apply cuts to tube data to fit specific requirements",
@@ -69,6 +69,7 @@ static double                I0 = 0.0;
 static double                RL = 0.0;
 static double               Vin = 0.0;
 static double              Vout = 0.0;
+static double              Wout = 0.0;
 
 static char             *format = NULL;
 static int          output_only = 0;
@@ -1397,6 +1398,7 @@ void se_plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, doub
 		fprintf(fp, "text %g %g -anchor ne -text %.3g -fill blue\n",
 				X(V0)-5, Y(I0)+5, Vbias);
 		
+		if (Wout > 0.0) { if (RL > 0.0) Vout = sqrt(2.0*Wout*RL); }
 		if (Vout > 0.0) { Vin = drive(m, Vout, V0, I0, RL); }
 		
 		if (Vin > 0.0) {
@@ -1604,6 +1606,7 @@ void cf_plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, doub
 		fprintf(fp, "text %g %g -anchor ne -text %.3g -fill blue\n",
 				X(V0)-5, Y(I0)+5, Vbias);
 		
+		if (Wout > 0.0) { if (RL > 0.0) Vout = sqrt(2.0*Wout*RL); }
 		if (Vout > 0.0) { Vin = cf_drive(m, Vout, V0, I0, RL); }
 		
 		if (Vin > 0.0) {
@@ -1819,6 +1822,7 @@ void pp_plate_curves(FILE *fp, model *m, double **data, int n, double Vmax, doub
 				X(0)-5, Y(0)+5, Vbias);
 		
 		
+		if (Wout > 0.0) { if (RL > 0.0) Vout = sqrt(0.5*Wout*RL); }
 		if (Vout > 0.0) { Vin = fabs(pp_drive(m, Vout, Vbias, V0, RL)); }
 		
 		if (Vin > 0.0) {
@@ -1949,7 +1953,7 @@ int main(int argc, char *argv[])
 	int n; double **d; model *m;
 	
 	/* Parse options */
-	while ((c = getopt(argc, argv, "hv2345P:L:I:O:f:dmp:wC:M:")) != -1)
+	while ((c = getopt(argc, argv, "hv2345P:L:I:O:W:f:dmp:wC:M:")) != -1)
 	switch (c) {
 	/* General options */
 		case 'h':				/* Help message */
@@ -1989,6 +1993,8 @@ int main(int argc, char *argv[])
 			Vin = strtod(optarg, NULL); break;
 		case 'O':				/* Swing voltage */
 			Vout = strtod(optarg, NULL); break;
+		case 'W':				/* Output power */
+			Wout = strtod(optarg, NULL); break;
 	
 	/* I/O functions */
 		case 'f':				/* Tagged data format */
