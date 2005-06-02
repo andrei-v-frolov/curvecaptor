@@ -1,5 +1,5 @@
 ################################################################
-# $Id: Makefile,v 1.5 2005/05/11 04:42:35 afrolov Exp $
+# $Id: Makefile,v 1.6 2005/06/02 22:14:48 afrolov Exp $
 # Makefile for Curve Captor source code
 ################################################################
 
@@ -18,7 +18,7 @@ AR	= ar -r
 RANLIB	= ranlib
 INSTALL = install
 
-VERSION = 0.9
+VERSION = 0.9.1
 
 
 
@@ -27,13 +27,13 @@ VERSION = 0.9
 ################################################################
 
 # Define if you want debugging code compiled in
-#DEBUG = 1
+# DEBUG = 1
 
 # Define if you have getline() available
 HAVE_GETLINE = 1
 
 # Define if you have FFTW library (for distortion analysis)
-HAVE_FFTW = 1
+# HAVE_FFTW = 1
 
 FFTINCS = -I$(HOME)/local/include
 FFTLIBS = -L$(HOME)/local/lib -lrfftw -lfftw
@@ -45,7 +45,7 @@ CFLAGS	= -g -pg -Wall
 DEFINES	= -DDEBUG -DVERSION='"$(VERSION) (debugging on)"' -DDATADIR='"$(DATADIR)"'
 LDFLAGS	= -pg
 else
-CFLAGS	= -O3 -march=pentium4
+CFLAGS	= -O3 -march=i386 -mcpu=pentium4
 DEFINES	= -DVERSION='"$(VERSION)"' -DDATADIR='"$(DATADIR)"'
 LDFLAGS	=
 endif

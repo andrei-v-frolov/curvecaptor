@@ -1,5 +1,5 @@
 #!/usr/bin/env wish
-# $Id: curvecaptor,v 1.17 2005/05/31 07:16:57 afrolov Exp $
+# $Id: curvecaptor,v 1.18 2005/06/02 22:14:48 afrolov Exp $
 
 # Curve Captor - vacuum tube curve capture and model builder tool
 # 
@@ -11,7 +11,7 @@
 
 ########################################################################
 # A Notebook widget for Tcl/Tk
-# $Revision: 1.17 $
+# $Revision: 1.18 $
 #
 # Copyright (C) 1996,1997,1998 D. Richard Hipp
 #
@@ -1036,13 +1036,13 @@ canvas $ca -width 720 -height 646 -background white -borderwidth 2 -relief groov
 rbox $ca 60 65 660 210 24 black
 $ca create image 75 135 -anchor w -image ::img::tubefit
 $ca create image 195 75 -anchor nw -image ::img::cc
-$ca create text 195 145 -anchor nw -font {times 16} -text "
+$ca create text 195 145 -anchor nw -font {times 12} -text "
 Vacuum tube curve tracer and model builder tool   -   Version 0.9.1
 Copyright (C) 2001-2005 Andrei Frolov <frolov@cita.utoronto.ca>"
 $ca create image 650 65 -anchor c -image ::img::sakura
 
 rbox $ca 60 230 660 500 24 black
-$ca create text 85 240 -anchor nw -font {times 16} -text "
+$ca create text 360 365 -anchor c -justify center -font {times 12} -text "
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published
 by the Free Software Foundation; either version 2 of the License, or
@@ -1055,11 +1055,12 @@ See the GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA"
+51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+"
 
 rbox $ca 60 530 660 610 24 red
-$ca create text 360 540 -anchor n -font {times 18 bold} -fill red -text "W A R N I N G :   Vacuum tube circuits involve LETHAL voltages."
-$ca create text 360 550 -anchor n -font {times 16} -fill black -text "
+$ca create text 360 540 -anchor n -font {times 14 bold} -fill red -text "W A R N I N G :   Vacuum tube circuits involve LETHAL voltages."
+$ca create text 360 550 -anchor n -justify center -font {times 12} -fill black -text "
 Your safety is your own responsibility. By using this program you agree
 not to hold me liable for whatever mayhem and destruction that might ensue."
 
